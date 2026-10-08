@@ -1,0 +1,64 @@
+# ─── Secrets & Credentials ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.secret
+secrets/
+credentials/
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+
+# ─── Editors ─────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+.npm
+.pnpm-store/
+dist/
+build/
+.next/
+.nuxt/
+.output/
+.cache/
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.eggs/
+*.egg-info/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# ─── Build artifacts ─────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+coverage/
+.coverage
+htmlcov/
+
+# ─── MCP / Agent local config ────────────────────────────────────────────────
+# Commit the .example file; never commit real configs with credentials.
+.agents/mcp_config.json

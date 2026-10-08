@@ -1,0 +1,18 @@
+{
+  "_comment": "Copy this file to mcp_config.json and fill in project-specific values. Never commit mcp_config.json — it is gitignored.",
+  "mcpServers": {
+    "_note_existing_environment_mcps": {
+      "_comment": "The following MCPs are already provided by the Antigravity environment. Do not redeclare them here unless you need to override configuration.",
+      "shadcn": "already available via Antigravity",
+      "github": "already available via Antigravity"
+    },
+    "_example_project_mcp": {
+      "_comment": "Replace this block with a real MCP entry when the project requires one. Use environment variables for all sensitive values — never hardcode credentials.",
+      "command": "npx",
+      "args": ["-y", "your-mcp-package"],
+      "env": {
+        "API_KEY": "${YOUR_API_KEY}"
+      }
+    }
+  }
+}

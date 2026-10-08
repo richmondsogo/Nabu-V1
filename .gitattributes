@@ -1,0 +1,14 @@
+# Normalize line endings to LF in the repository.
+# Git will convert to CRLF on Windows checkout automatically.
+* text=auto eol=lf
+
+# PowerShell scripts — keep LF; Windows PS handles both.
+*.ps1 text eol=lf
+
+# Binary files — no line ending conversion.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

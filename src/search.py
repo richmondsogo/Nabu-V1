@@ -18,7 +18,7 @@ import httpx
 from config import Config
 from concurrency import HostRateLimiter, SingleFlight
 from database import Database
-from models import Book, SearchHit, SearchOutcome
+from models import Book, Mirror, SearchHit, SearchOutcome
 from sources.libgen import is_parser, li_parser
 from sources.mirror_manager import MirrorManager
 
@@ -158,17 +158,19 @@ class SearchService:
             seen_keys: set[str] = set()
             total_latency = 0
             pages_fetched = 0
-            try:
-                for page in range(1, target_max_pages + 1):
-                    url = parser.search_url(mirror, query, page=page)
-                    t0 = time.time()
+            mirror_failed = False
+
+            for page in range(1, target_max_pages + 1):
+                url = parser.search_url(mirror, query, page=page)
+                t0 = time.time()
+                try:
                     async with self.host_rate_limiter.acquire(mirror.host):
                         async with self.global_semaphore:
                             resp = await self._client.get(
                                 url,
                                 timeout=httpx.Timeout(
                                     self.config.connect_timeout,
-                                    connect=self.config.connect_timeout,
+                                    connect=min(self.config.connect_timeout, 4.0),
                                 ),
                                 headers={"User-Agent": USER_AGENT},
                                 follow_redirects=True,
@@ -180,33 +182,87 @@ class SearchService:
                         raise RuntimeError(f"HTTP {resp.status_code}")
 
                     hits = parser.parse(resp.text, mirror)
-                    if not hits:
+                except Exception as e:
+                    last_exc = e
+                    err_desc = f"{type(e).__name__}('{e}')" if str(e) else repr(e)
+                    if all_hits:
+                        # Page 1 (or prior) already yielded hits: do not discard them
+                        logger.warning(
+                            "[search] Mirror %s page %d failed (%s); returning %d partial hits from previous pages",
+                            mirror.url, page, err_desc, len(all_hits)
+                        )
+                        break
+                    else:
+                        logger.warning("[search] Mirror %s page %d failed: %s", mirror.url, page, err_desc)
+                        await self.mirror_manager.record_result(mirror.url, False, error=err_desc)
+                        mirror_failed = True
                         break
 
-                    new_count = 0
-                    for hit in hits:
-                        key = hit.md5 or (hit.title.strip().lower(), (hit.author or "").strip().lower())
-                        if key not in seen_keys:
-                            seen_keys.add(key)
-                            all_hits.append(hit)
-                            new_count += 1
+                if not hits:
+                    break
 
-                    if len(all_hits) >= target_max_results:
-                        all_hits = all_hits[:target_max_results]
-                        break
+                new_count = 0
+                for hit in hits:
+                    key = hit.md5 or (hit.title.strip().lower(), (hit.author or "").strip().lower())
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        all_hits.append(hit)
+                        new_count += 1
 
-                    if new_count == 0 or len(hits) < 25:
-                        break
+                if len(all_hits) >= target_max_results:
+                    all_hits = all_hits[:target_max_results]
+                    break
 
+                if new_count == 0 or len(hits) < 25:
+                    break
+
+            if mirror_failed:
+                continue
+
+            if all_hits or pages_fetched > 0:
                 avg_latency = int(total_latency / max(1, pages_fetched))
                 await self.mirror_manager.record_result(mirror.url, True, latency_ms=avg_latency)
                 return all_hits, mirror, avg_latency, pages_fetched
-            except Exception as e:
-                last_exc = e
-                await self.mirror_manager.record_result(mirror.url, False, error=repr(e))
-                continue
 
         raise AllMirrorsFailed("All upstream mirrors failed") from last_exc
+
+    async def _execute_scrape_and_persist(
+        self,
+        query: str,
+    ) -> tuple[list[Book], list[SearchHit], Mirror | None, int, int]:
+        """Runs upstream scrape, upserts books into DB, and writes to search_cache."""
+        upstream_hits, mirror, latency_ms, pages_fetched = await self._scrape(query)
+
+        upstream_ids: list[int] = []
+        for hit in upstream_hits:
+            bid = await self.db.upsert_book(
+                title=hit.title,
+                author=hit.author,
+                md5=hit.md5,
+                filename=None,
+                file_size=hit.filesize,
+                file_type=hit.extension,
+                source=hit.source,
+                source_id=hit.source_id,
+            )
+            upstream_ids.append(bid)
+
+        final_ids = list(dict.fromkeys(upstream_ids))[:self.config.upstream_max_results]
+        books = await self.db.get_books_by_ids(final_ids)
+        ranked_books = _rank_books(books, query)
+
+        qn = normalize_query(query)
+        cache_ttl = self.config.search_cache_ttl if ranked_books else self.config.empty_result_cache_ttl
+        await self.db.set_search_cache(
+            qn,
+            [b.id for b in ranked_books],
+            cache_ttl,
+            is_complete=True,
+            pages_fetched=pages_fetched,
+            total_upstream=len(upstream_hits),
+        )
+
+        return ranked_books, upstream_hits, mirror, latency_ms, pages_fetched
 
     async def search_books(
         self,
@@ -240,10 +296,8 @@ class SearchService:
                     query_normalized=qn,
                 )
 
-        # 2. Not a verbatim repeat: always go to the upstream sources for freshness.
+        # 2. Not a verbatim repeat: rate limit check for new upstream query
         target_results = self.config.upstream_max_results
-
-        # 3. Upstream SingleFlight scrape
         if user_id is not None and self.user_rate_limiter is not None:
             allowed = await self.user_rate_limiter.acquire(user_id)
             if not allowed:
@@ -251,39 +305,23 @@ class SearchService:
 
         flight_key = f"search:{qn}"
         try:
-            scrape_res = await self.single_flight.do(
+            flight_res = await self.single_flight.do(
                 flight_key,
-                lambda: self._scrape(query),
+                lambda: self._execute_scrape_and_persist(query),
                 timeout=self.config.singleflight_timeout,
             )
-            upstream_hits, mirror, latency_ms, pages_fetched = scrape_res
+            ranked_books, upstream_hits, mirror, latency_ms, pages_fetched = flight_res
 
-            # Upsert upstream hits into database
-            upstream_ids: list[int] = []
-            for hit in upstream_hits:
-                bid = await self.db.upsert_book(
-                    title=hit.title,
-                    author=hit.author,
-                    md5=hit.md5,
-                    filename=None,
-                    file_size=hit.filesize,
-                    file_type=hit.extension,
-                    source=hit.source,
-                    source_id=hit.source_id,
-                )
-                upstream_ids.append(bid)
-
-            # Upstream results only (deduplicated, order preserved), capped at upstream_max_results
-            final_ids = list(dict.fromkeys(upstream_ids))[:target_results]
-            books = await self.db.get_books_by_ids(final_ids)
-            ranked_books = _rank_books(books, query)
-
-            # 4. If strict query produced 0 results, retry once with relaxed query
+            # 3. If strict query produced 0 results, retry once with relaxed query (without charging user token again)
             if not ranked_books:
                 relaxed = relax_query(query)
                 if relaxed and relaxed != qn:
                     logger.info("[search] Strict query %r returned 0 hits, trying relaxed query %r", qn, relaxed)
-                    relaxed_outcome = await self.search_books(relaxed, user_id=user_id, force_upstream=True)
+                    relaxed_outcome = await self.search_books(
+                        relaxed,
+                        user_id=None,  # Do not deduct second rate-limit token for automatic relaxation
+                        force_upstream=True,
+                    )
                     if relaxed_outcome.hits:
                         return SearchOutcome(
                             hits=relaxed_outcome.hits,
@@ -296,17 +334,6 @@ class SearchService:
                             is_relaxed=True,
                             upstream_reached=True,
                         )
-
-            is_complete = True
-            cache_ttl = self.config.search_cache_ttl if ranked_books else self.config.empty_result_cache_ttl
-            await self.db.set_search_cache(
-                qn,
-                [b.id for b in ranked_books],
-                cache_ttl,
-                is_complete=is_complete,
-                pages_fetched=pages_fetched,
-                total_upstream=len(upstream_hits),
-            )
 
             logger.info("[search] Query %r served upstream (%d books)", qn, len(ranked_books))
             return SearchOutcome(
@@ -321,7 +348,8 @@ class SearchService:
             )
 
         except Exception as exc:
-            logger.warning("[search] Upstream scrape failed for %r: %s", qn, exc)
+            err_desc = f"{type(exc).__name__}('{exc}')" if str(exc) else repr(exc)
+            logger.warning("[search] Upstream scrape failed for %r: %s", qn, err_desc)
             # Degraded fallbacks: stale cache first, then the local catalogue
             if cached is not None:
                 stale_ids = cached[0]

@@ -203,3 +203,52 @@ async def test_resolve_direct_download_link_http_failure():
     assert resolved is None
 
 
+def test_challenge_and_nginx_detection_raises_upstream_invalid():
+    from sources.base import UpstreamInvalidResponseError
+
+    mirror_li = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    mirror_is = Mirror(id=2, source="libgen", url="https://libgen.is", fork="is")
+
+    nginx_html = "<html><head><title>Welcome to nginx!</title></head><body><h1>Welcome</h1></body></html>"
+    cf_html = "<html><head><title>Attention Required! | Cloudflare</title></head><body>cf-browser-verification</body></html>"
+
+    with pytest.raises(UpstreamInvalidResponseError, match=r"(?i)welcome to nginx"):
+        li_parser.parse(nginx_html, mirror_li)
+
+    with pytest.raises(UpstreamInvalidResponseError, match=r"(?i)attention required"):
+        is_parser.parse(cf_html, mirror_is)
+
+
+def test_search_url_includes_comics_fiction_and_libgen_topics():
+    mirror = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    url = li_parser.search_url(mirror, "hulk")
+    assert "topics%5B%5D=l" in url
+    assert "topics%5B%5D=c" in url
+    assert "topics%5B%5D=f" in url
+
+
+def test_li_parser_prioritizes_ads_md5_over_arbitrary_hash():
+    # Row contains a decoy hash in random text, but genuine MD5 in ads.php
+    decoy = "00000000000000000000000000000000"
+    real = "11111111111111111111111111111111"
+    fake_html = f"""
+    <table>
+      <tr>
+        <td>Edition with decoy {decoy}</td>
+        <td>Author</td>
+        <td>Col3</td>
+        <td>2020</td>
+        <td>EN</td>
+        <td>Col5</td>
+        <td>5 MB</td>
+        <td>cbr</td>
+        <td><a href="ads.php?md5={real}">Download</a></td>
+      </tr>
+    </table>
+    """
+    mirror = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    hits = li_parser.parse(fake_html, mirror)
+    assert len(hits) == 1
+    assert hits[0].md5 == real
+
+

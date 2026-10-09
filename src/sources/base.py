@@ -6,6 +6,10 @@ from typing import Protocol
 from models import Mirror, SearchHit
 
 
+class UpstreamInvalidResponseError(RuntimeError):
+    """Raised when upstream mirror returns a challenge, error, or unparseable page."""
+
+
 class SourceParser(Protocol):
     """Protocol for parsing mirror HTML search results and building URLs."""
 

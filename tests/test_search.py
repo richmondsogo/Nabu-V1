@@ -347,3 +347,119 @@ async def test_relaxed_query_fallback_on_zero_hits(test_config: Config):
     assert len(outcome.hits) > 0
     assert outcome.is_relaxed is True
 
+
+@pytest.mark.asyncio
+async def test_partial_results_preserved_when_later_page_fails(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    rows = "\n".join(
+        f'<tr><td>Rust Async Programming Vol {i}</td><td>Author</td><td>c</td><td>2022</td><td>EN</td><td>c</td><td>2 MB</td><td>pdf</td><td><a href="ads.php?md5={i:032x}">1</a></td></tr>'
+        for i in range(25)
+    )
+    page1_html = f"""
+    <table>
+      <tr><th>Title</th><th>Author</th><th>Col3</th><th>Year</th><th>Lang</th><th>Col5</th><th>Size</th><th>Ext</th><th>Mirrors</th></tr>
+      {rows}
+    </table>
+    """
+
+    call_count = 0
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if "page=2" in str(request.url):
+            # Page 2 fails with 502 Bad Gateway
+            return httpx.Response(502, text="Bad Gateway")
+        return httpx.Response(200, text=page1_html)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        user_rate_limiter=UserRateLimiter(5, 0.5),
+        http_client=client,
+    )
+
+    outcome = await service.search_books("Rust Async", user_id=1001)
+    # Page 1 hits (25 books) are returned cleanly even though page 2 threw an error
+    assert len(outcome.hits) == 25
+    assert "Rust Async Programming" in outcome.hits[0].title
+    assert outcome.source == "upstream"
+    assert call_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_challenge_response_does_not_poison_empty_cache(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    # Mirror returns nginx default error page
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html><head><title>Welcome to nginx!</title></head></html>")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        user_rate_limiter=UserRateLimiter(5, 0.5),
+        http_client=client,
+    )
+
+    # All mirrors fail because challenge page is raised as UpstreamInvalidResponseError
+    with pytest.raises(AllMirrorsFailed):
+        await service.search_books("nginx_fail_query", user_id=1001)
+
+    # Crucial: search_cache must NOT contain empty results for this query
+    cached = await db.get_search_cache("nginx_fail_query")
+    assert cached is None
+
+
+@pytest.mark.asyncio
+async def test_relaxed_query_does_not_consume_second_token(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    mock_hit_html = """
+    <table>
+      <tr><th>Title</th><th>Author</th><th>Col3</th><th>Year</th><th>Lang</th><th>Col5</th><th>Size</th><th>Ext</th><th>Mirrors</th></tr>
+      <tr><td>Rust Programming</td><td>Author</td><td>c</td><td>2021</td><td>EN</td><td>c</td><td>2 MB</td><td>pdf</td><td><a href="ads.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8">1</a></td></tr>
+    </table>
+    """
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url).lower()
+        if "cookbook" in url_str and "the" in url_str:
+            return httpx.Response(200, text="<table><tr><th>Title</th></tr></table>")
+        return httpx.Response(200, text=mock_hit_html)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    # Give user exactly 1.0 token
+    user_limiter = UserRateLimiter(max_tokens=1.0, refill_per_sec=0.0)
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        user_rate_limiter=user_limiter,
+        http_client=client,
+    )
+
+    # Strict query has 0 hits, triggers relaxation.
+    # If relaxation deducted a second token, it would fail with RateLimitedError.
+    # It must succeed because relaxation uses the original request's authorization!
+    outcome = await service.search_books("The Rust Cookbook", user_id=1001)
+    assert len(outcome.hits) > 0
+    assert outcome.is_relaxed is True
+

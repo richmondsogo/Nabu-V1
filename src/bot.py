@@ -409,7 +409,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if action == "book":
         if not args:
             return
-        book_id = int(args[0])
+        try:
+            book_id = int(args[0])
+        except (ValueError, TypeError):
+            logger.warning("Invalid book ID in callback data: %r", args)
+            return
+
         book = await db.get_book_by_id(book_id)
         if not book:
             if query.message:
@@ -430,7 +435,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             mirror_mgr: MirrorManager | None = context.bot_data.get("mirror_manager")
             if mirror_mgr:
                 try:
-                    direct_url = await mirror_mgr.resolve_direct_link(clean_md5)
+                    direct_url = await asyncio.wait_for(
+                        mirror_mgr.resolve_direct_link(clean_md5),
+                        timeout=6.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.debug("[bot] Direct link resolution timed out for %s, falling back to landing links", clean_md5)
                 except Exception as exc:
                     logger.warning("[bot] Direct link resolution failed for %s: %s", clean_md5, exc)
 
@@ -519,7 +529,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         qh = args[0]
         try:
             page_num = int(args[1])
-        except ValueError:
+        except (ValueError, TypeError):
             return
 
         reg_entry = _query_registry.get(qh)
@@ -529,26 +539,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         raw_query, _ = reg_entry
         qn = normalize_query(raw_query)
-        cached = await db.get_search_cache(qn)
-        if not cached:
-            outcome = await search_service.search_books(raw_query, user_id=user_id)
-        else:
-            book_ids = cached[0]
-            books = await db.get_books_by_ids(book_ids)
-            outcome = SearchOutcome(
-                hits=books,
-                source="cache",
-                total_count=len(books),
-                query_normalized=qn,
-            )
+        try:
+            cached = await db.get_search_cache(qn)
+            if not cached:
+                outcome = await search_service.search_books(raw_query, user_id=user_id)
+            else:
+                book_ids = cached[0]
+                books = await db.get_books_by_ids(book_ids)
+                outcome = SearchOutcome(
+                    hits=books,
+                    source="cache",
+                    total_count=len(books),
+                    query_normalized=qn,
+                )
 
-        text = _format_results_text(outcome, page=page_num, page_size=config.page_size)
-        reply_markup = _format_search_keyboard(outcome.hits, qh, page=page_num, page_size=config.page_size)
-        if query.message:
-            try:
+            text = _format_results_text(outcome, page=page_num, page_size=config.page_size)
+            reply_markup = _format_search_keyboard(outcome.hits, qh, page=page_num, page_size=config.page_size)
+            if query.message:
                 await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
-            except Exception as e:
-                logger.debug("Failed editing message for page navigation: %s", e)
+        except RateLimitedError:
+            await query.answer("Slow down! Please wait a few seconds before searching again.", show_alert=True)
+        except AllMirrorsFailed:
+            if query.message:
+                await query.message.reply_text("⚠️ All sources unreachable. Try again later.")
+        except Exception as e:
+            logger.debug("Failed editing message for page navigation: %s", e)
 
     elif action == "noop":
         await query.answer()
@@ -557,6 +572,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # -----------------------------------------------------------------------------
 # Application Factory & Lifecycle
 # -----------------------------------------------------------------------------
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log unhandled errors and notify user cleanly with zero data leakage."""
+    err = context.error
+    logger.error("Exception while handling an update: %r", err, exc_info=err)
+    if isinstance(update, Update):
+        try:
+            if update.effective_message:
+                await update.effective_message.reply_text("⚠️ An unexpected error occurred. Please try again.")
+            elif update.callback_query:
+                await update.callback_query.answer("⚠️ An error occurred. Please try again.", show_alert=True)
+        except Exception as notify_err:
+            logger.debug("Failed sending error notification to user: %r", notify_err)
+
 
 async def post_init(application: Application) -> None:
     """Launch background mirror probe once the event loop is active."""
@@ -614,6 +643,9 @@ def build_application(config: Config) -> Application:
     app.bot_data["mirror_manager"] = mirror_manager
     app.bot_data["search_service"] = search_service
     app.bot_data["user_rate_limiter"] = user_rate_limiter
+
+    # Register error handler
+    app.add_error_handler(error_handler)
 
     # Register handlers
     app.add_handler(CommandHandler("start", handle_start))

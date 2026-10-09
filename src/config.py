@@ -30,7 +30,7 @@ class Config:
     max_upstream: int = 4
     polite_delay_ms: int = 750
     connect_timeout: float = 8.0
-    singleflight_timeout: float = 15.0
+    singleflight_timeout: float = 25.0
     result_limit: int = 50
     upstream_max_results: int = 50
     upstream_max_pages: int = 3
@@ -166,7 +166,7 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
     max_upstream = _parse_int(raw_env.get("MAX_UPSTREAM"), "MAX_UPSTREAM", 4)
     polite_delay_ms = _parse_int(raw_env.get("POLITE_DELAY_MS"), "POLITE_DELAY_MS", 750, min_val=0)
     connect_timeout = _parse_float(raw_env.get("CONNECT_TIMEOUT"), "CONNECT_TIMEOUT", 8.0)
-    singleflight_timeout = _parse_float(raw_env.get("SINGLEFLIGHT_TIMEOUT"), "SINGLEFLIGHT_TIMEOUT", 15.0)
+    singleflight_timeout = _parse_float(raw_env.get("SINGLEFLIGHT_TIMEOUT"), "SINGLEFLIGHT_TIMEOUT", 25.0)
 
     # Result count & pagination settings
     raw_res_limit = raw_env.get("RESULT_LIMIT")

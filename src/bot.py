@@ -13,8 +13,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+from pathlib import Path
 import sys
 import time
+
+# Ensure src directory is on sys.path for direct script execution
+_SRC_DIR = Path(__file__).resolve().parent
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 from telegram import (
     InlineKeyboardButton,

@@ -35,6 +35,10 @@ Permanently transition Nabu from a file-delivery and IPFS-pinning bot into a hig
   - Zero-network callback resolution for `book:<id>`.
   - Command handlers: `/start`, `/help`, `/status`, `/mirrors`, `/rebuild`.
   - Lifecycle: `post_shutdown` hook cancelling background tasks cleanly on exit.
+- **Project Layout Reorganization (`src/`)**:
+  - Relocated all application source modules and packages from the root directory into `src/` (`src/bot.py`, `src/concurrency.py`, `src/config.py`, `src/database.py`, `src/importer.py`, `src/models.py`, `src/search.py`, `src/utils.py`, `src/sources/`).
+  - Added `pyproject.toml` with `pythonpath = ["src"]` pytest configuration.
+  - Added self-locating directory path initialization in CLI entrypoints (`src/bot.py`, `src/importer.py`).
 - **Legacy Purge**:
   - Deleted `ipfs.py`, `queue_manager.py`, `sources/resolver.py`, `acquirer.py`, `sources/annas.py`, and legacy fixtures.
   - Cleaned up obsolete models from `models.py`.

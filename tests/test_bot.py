@@ -7,12 +7,17 @@ import pytest
 import httpx
 
 from bot import (
+    acquire_handler,
     callback_query_handler,
     create_download_processor,
+    fetch_handler,
+    get_handler,
     help_handler,
     is_authorized,
     queue_handler,
+    rebuild_handler,
     search_message_handler,
+    sources_handler,
     start_handler,
     status_handler,
 )
@@ -268,3 +273,212 @@ async def test_download_processor_corrupted_payload_aborts(mock_config: Config, 
         assert not part_file.exists()
     finally:
         await kubo.close()
+
+
+@pytest.mark.asyncio
+async def test_get_handler(mock_config: Config):
+    mock_acquirer = MagicMock()
+    mock_acquirer.enqueue = AsyncMock()
+
+    update = MagicMock()
+    update.effective_user.id = 1001
+    update.effective_chat.id = 1001
+    status_msg = MagicMock()
+    status_msg.edit_text = AsyncMock()
+    update.effective_message.reply_text = AsyncMock(return_value=status_msg)
+
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "acquirer": mock_acquirer}
+    context.args = ["Clean", "Architecture"]
+
+    # Valid get query
+    await get_handler(update, context)
+    mock_acquirer.enqueue.assert_called_once()
+    assert mock_acquirer.enqueue.call_args.kwargs["query"] == "Clean Architecture"
+    assert mock_acquirer.enqueue.call_args.kwargs["user_id"] == 1001
+
+    # Empty get query prints usage
+    context.args = []
+    update.effective_message.reply_text.reset_mock()
+    await get_handler(update, context)
+    assert "Usage: `/get" in update.effective_message.reply_text.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_fetch_handler_with_and_without_cid(mock_config: Config, mock_db: Database):
+    queue = QueueManager(max_workers=3)
+    queue.start()
+    mock_acquirer = MagicMock()
+    mock_acquirer.enqueue = AsyncMock()
+
+    # Book 1: Has CID
+    book_with_cid = await mock_db.insert_book(
+        title="Book With CID",
+        cid="bafybeicidbook",
+        file_type="epub",
+    )
+    # Book 2: No CID, has MD5
+    book_no_cid = await mock_db.insert_book(
+        title="Book No CID",
+        md5="0123456789abcdef0123456789abcdef",
+        file_type="pdf",
+    )
+
+    context = MagicMock()
+    context.bot_data = {
+        "config": mock_config,
+        "db": mock_db,
+        "queue": queue,
+        "acquirer": mock_acquirer,
+    }
+
+    update = MagicMock()
+    update.effective_user.id = 1001
+    update.effective_chat.id = 1001
+    status_msg = MagicMock()
+    status_msg.edit_text = AsyncMock()
+    update.effective_message.reply_text = AsyncMock(return_value=status_msg)
+
+    try:
+        # 1. Fetch book with CID -> enqueues directly to delivery queue
+        context.args = [str(book_with_cid.id)]
+        await fetch_handler(update, context)
+        assert queue.stats()["queued"] == 1
+        mock_acquirer.enqueue.assert_not_called()
+
+        # 2. Fetch book without CID -> delegates to acquirer
+        context.args = [str(book_no_cid.id)]
+        await fetch_handler(update, context)
+        mock_acquirer.enqueue.assert_called_once()
+        assert mock_acquirer.enqueue.call_args.kwargs["query"] == "Book No CID"
+        assert mock_acquirer.enqueue.call_args.kwargs["md5"] == "0123456789abcdef0123456789abcdef"
+    finally:
+        await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_sources_and_rebuild_handlers(mock_config: Config, mock_db: Database):
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "db": mock_db}
+
+    update = MagicMock()
+    update.effective_user.id = 1001
+    update.effective_message.reply_text = AsyncMock()
+
+    # 1. Sources handler
+    await sources_handler(update, context)
+    sources_text = update.effective_message.reply_text.call_args[0][0]
+    assert "Shadow Library Sources" in sources_text
+    assert "annas" in sources_text
+    assert "libgen" in sources_text
+
+    # 2. Rebuild handler
+    update.effective_message.reply_text.reset_mock()
+    await rebuild_handler(update, context)
+    assert "rebuilt the FTS5 catalog" in update.effective_message.reply_text.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_acquire_handler(mock_config: Config):
+    mock_acquirer = MagicMock()
+    mock_acquirer._user_active = {1001: "job-active-99"}
+    mock_acquirer._user_waiting = {1001: [MagicMock(query="Waiting Book 1")]}
+
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "acquirer": mock_acquirer}
+
+    update = MagicMock()
+    update.effective_user.id = 1001
+    update.effective_message.reply_text = AsyncMock()
+
+    await acquire_handler(update, context)
+    text = update.effective_message.reply_text.call_args[0][0]
+    assert "Your Acquisitions" in text
+    assert "job-active-99" in text
+    assert "Waiting Book 1" in text
+
+
+@pytest.mark.asyncio
+async def test_auto_acquire_on_search_miss(mock_config: Config, mock_db: Database):
+    mock_acquirer = MagicMock()
+    mock_acquirer.enqueue = AsyncMock()
+
+    context = MagicMock()
+    context.bot_data = {
+        "config": mock_config,
+        "db": mock_db,
+        "acquirer": mock_acquirer,
+    }
+
+    update = MagicMock()
+    update.effective_user.id = 1001
+    update.effective_chat.id = 1001
+    status_msg = MagicMock()
+    status_msg.edit_text = AsyncMock()
+    update.effective_message.reply_text = AsyncMock(return_value=status_msg)
+    update.effective_message.text = "Unknown Mysterious Book"
+
+    # With auto_acquire enabled (default in Config)
+    assert mock_config.auto_acquire is True
+    await search_message_handler(update, context)
+
+    # Status message was sent
+    assert "Searching shadow libraries" in update.effective_message.reply_text.call_args[0][0]
+    mock_acquirer.enqueue.assert_called_once()
+    assert mock_acquirer.enqueue.call_args.kwargs["query"] == "Unknown Mysterious Book"
+
+
+@pytest.mark.asyncio
+async def test_callback_web_and_no_cid_handling(mock_config: Config, mock_db: Database):
+    from utils import candidates, encode_callback
+
+    mock_acquirer = MagicMock()
+    mock_acquirer.enqueue = AsyncMock()
+    queue = QueueManager(max_workers=3)
+
+    # Insert book without CID
+    book_no_cid = await mock_db.insert_book(
+        title="Offline Cached Title",
+        md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        file_type="pdf",
+    )
+
+    context = MagicMock()
+    context.bot_data = {
+        "config": mock_config,
+        "db": mock_db,
+        "queue": queue,
+        "acquirer": mock_acquirer,
+    }
+
+    # 1. Tap book without CID -> triggers acquirer
+    cb_update = MagicMock()
+    cb_update.effective_user.id = 1001
+    cb_update.callback_query.data = f"book:{book_no_cid.id}"
+    cb_update.callback_query.answer = AsyncMock()
+    status_msg = MagicMock()
+    status_msg.edit_text = AsyncMock()
+    cb_update.callback_query.message.reply_text = AsyncMock(return_value=status_msg)
+    cb_update.callback_query.message.chat_id = 1001
+
+    await callback_query_handler(cb_update, context)
+    mock_acquirer.enqueue.assert_called_once()
+    assert mock_acquirer.enqueue.call_args.kwargs["query"] == "Offline Cached Title"
+    assert mock_acquirer.enqueue.call_args.kwargs["md5"] == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+    # 2. Tap web search callback
+    mock_acquirer.enqueue.reset_mock()
+    token = candidates.store(1001, [{"query": "Quantum Physics"}])
+    cb_data = encode_callback("web", token)
+
+    cb_web_update = MagicMock()
+    cb_web_update.effective_user.id = 1001
+    cb_web_update.callback_query.data = cb_data
+    cb_web_update.callback_query.answer = AsyncMock()
+    cb_web_update.callback_query.message.reply_text = AsyncMock(return_value=status_msg)
+    cb_web_update.callback_query.message.chat_id = 1001
+
+    await callback_query_handler(cb_web_update, context)
+    mock_acquirer.enqueue.assert_called_once()
+    assert mock_acquirer.enqueue.call_args.kwargs["query"] == "Quantum Physics"
+

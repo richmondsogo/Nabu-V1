@@ -337,3 +337,73 @@ async def test_source_resolver_resolve_direct_cid() -> None:
     source, handle = await resolver.resolve(hit_with_cid)
     assert handle.kind == "cid"
     assert handle.cid == hit_with_cid.cid
+
+
+def test_libgen_parse_size_variations() -> None:
+    source = LibgenSource()
+    assert source._parse_size("500 Kb") == 500 * 1024
+    assert source._parse_size("1.5 Mb") == int(1.5 * 1024 * 1024)
+    assert source._parse_size("2 Gb") == 2 * 1024 * 1024 * 1024
+    assert source._parse_size("12345 b") == 12345
+    assert source._parse_size("") is None
+    assert source._parse_size("unknown") is None
+
+
+def test_libgen_parse_empty_or_malformed_html() -> None:
+    source = LibgenSource()
+    assert source.parse_search_html("", "https://libgen.is") == []
+    assert source.parse_search_html("<html><body>No results</body></html>", "https://libgen.is") == []
+    assert source.parse_search_html("<table><tr><td>1</td></tr></table>", "https://libgen.is") == []
+
+
+@pytest.mark.asyncio
+async def test_libgen_resolve_missing_detail_url_raises() -> None:
+    source = LibgenSource()
+    hit = SearchHit(source="libgen", source_id="1", title="No URL")
+    with pytest.raises(ValueError, match="carries no detail_url"):
+        await source.resolve(hit)
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_libgen_resolve_unparseable_detail_html_raises() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html><body>No download links here</body></html>")
+
+    transport = httpx.MockTransport(handler)
+    source = LibgenSource(polite_delay_ms=0, transport=transport)
+    hit = SearchHit(
+        source="libgen",
+        source_id="1",
+        title="Unparseable",
+        detail_url="http://library.lol/main/unknown",
+    )
+    with pytest.raises(RuntimeError, match="Could not locate direct download link"):
+        await source.resolve(hit)
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_libgen_download_network_error_cleans_up(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="Server Error")
+
+    transport = httpx.MockTransport(handler)
+    source = LibgenSource(polite_delay_ms=0, transport=transport)
+    handle = DownloadHandle(kind="url", url="https://download.library.lol/broken.pdf", source="libgen")
+    dest = tmp_path / "failed.part"
+
+    with pytest.raises(RuntimeError, match="Download returned HTTP 500"):
+        await source.download(handle, dest, max_bytes=50000, timeout=10.0)
+
+    assert not dest.exists()
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_source_resolver_unknown_source_raises() -> None:
+    resolver = SourceResolver(sources={})
+    hit = SearchHit(source="unknown_src", source_id="1", title="Lost Book")
+    with pytest.raises(ValueError, match="not configured in resolver"):
+        await resolver.resolve(hit)
+

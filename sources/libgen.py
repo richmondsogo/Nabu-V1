@@ -7,6 +7,8 @@ Supports:
 
 from __future__ import annotations
 
+import html
+from html.parser import HTMLParser
 import logging
 import re
 from urllib.parse import quote_plus
@@ -40,10 +42,66 @@ def parse_size(size_str: str | None) -> int | None:
     return int(val)
 
 
+class _HTMLTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.texts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.texts.append(data)
+
+    def get_text(self) -> str:
+        return " ".join("".join(self.texts).split())
+
+
 def _clean_text(html_fragment: str) -> str:
-    """Strip tags and normalize whitespace."""
-    no_tags = re.sub(r"<[^>]+>", " ", html_fragment)
-    return re.sub(r"\s+", " ", no_tags).strip()
+    """Strip tags and normalize whitespace safely using standard library HTMLParser."""
+    if not html_fragment:
+        return ""
+    try:
+        parser = _HTMLTextExtractor()
+        parser.feed(html_fragment)
+        return html.unescape(parser.get_text())
+    except Exception:
+        no_tags = re.sub(r"<[^>]+>", " ", html_fragment)
+        return html.unescape(re.sub(r"\s+", " ", no_tags).strip())
+
+
+def _extract_li_title(col_html: str) -> str:
+    """Extract clean title from li-fork column 0, prioritizing the edition.php link text."""
+    class _LiTitleExtractor(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.in_edition = False
+            self.edition_texts: list[str] = []
+            self.all_texts: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag == "a":
+                attr_dict = dict(attrs)
+                href = attr_dict.get("href", "")
+                if href and "edition.php" in href:
+                    self.in_edition = True
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "a" and self.in_edition:
+                self.in_edition = False
+
+        def handle_data(self, data: str) -> None:
+            self.all_texts.append(data)
+            if self.in_edition:
+                self.edition_texts.append(data)
+
+    try:
+        parser = _LiTitleExtractor()
+        parser.feed(col_html)
+        if parser.edition_texts:
+            title = " ".join("".join(parser.edition_texts).split())
+            if title:
+                return html.unescape(title)
+        return html.unescape(" ".join("".join(parser.all_texts).split()))
+    except Exception:
+        return _clean_text(col_html)
 
 
 class LiForkParser:
@@ -72,7 +130,7 @@ class LiForkParser:
 
             try:
                 # Column 0: Title and edition link
-                title = _clean_text(cols[0])
+                title = _extract_li_title(cols[0])
                 if not title:
                     continue
 

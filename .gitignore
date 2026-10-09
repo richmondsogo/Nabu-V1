@@ -62,3 +62,9 @@ htmlcov/
 # ─── MCP / Agent local config ────────────────────────────────────────────────
 # Commit the .example file; never commit real configs with credentials.
 .agents/mcp_config.json
+
+# ─── Project Local Storage & Temporary Files ─────────────────────────────────
+data/
+tmp/
+*.part
+data/books.db*

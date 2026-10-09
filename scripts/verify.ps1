@@ -96,9 +96,10 @@ Write-Host ""
 #
 
 Write-Host "Project checks:" -ForegroundColor White
-Write-Host "  --  No project-specific checks defined." -ForegroundColor Yellow
-Write-Host "      Customize scripts\verify.ps1 for your stack." -ForegroundColor DarkGray
-$skipped++
+$pyExe = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "python" }
+Run-Check "Python tests (pytest)" {
+    & $pyExe -m pytest tests
+}
 
 Write-Host ""
 

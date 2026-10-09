@@ -93,8 +93,29 @@ Write-Host ""
 #   if (-not $hasPnpm) { $issueList += "pnpm is required. Run: npm install -g pnpm" }
 #
 Write-Host "Project requirements:" -ForegroundColor White
-Write-Host "  --  No project-specific requirements defined yet." -ForegroundColor Yellow
-Write-Host "      Customize scripts\check-env.ps1 for your stack." -ForegroundColor DarkGray
+
+# Check Python 3.12 in venv or system
+$pyExe = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "py -3.12" }
+try {
+    $pyVer = & $pyExe --version 2>&1 | Select-Object -First 1
+    if ($pyVer -match "3\.12") {
+        Write-Host "  OK  Python 3.12   $pyVer" -ForegroundColor Green
+    } else {
+        Write-Host "  WW  Python        $pyVer (Expected 3.12.x)" -ForegroundColor Yellow
+        $issueList += "Python 3.12 expected, got: $pyVer"
+    }
+} catch {
+    Write-Host "  !!  Python 3.12   [not found]" -ForegroundColor Red
+    $issueList += "Python 3.12 is required. Run 'uv venv --python 3.12 .venv'"
+}
+
+# Check Kubo RPC port 5001
+$kuboLive = Get-NetTCPConnection -LocalPort 5001 -ErrorAction SilentlyContinue
+if ($kuboLive) {
+    Write-Host "  OK  Kubo Daemon   Port 5001 listening" -ForegroundColor Green
+} else {
+    Write-Host "  WW  Kubo Daemon   Port 5001 not listening (start with 'ipfs daemon')" -ForegroundColor Yellow
+}
 
 Write-Host ""
 

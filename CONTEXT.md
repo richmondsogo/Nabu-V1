@@ -1,70 +1,89 @@
-# Project Context
+# Project context
 
-> This is the authoritative source of project/domain knowledge for this repository.
->
-> Keep it synchronized with architectural decisions in `docs/adr/`.
->
-> Agents should read this at the start of each session to avoid repeatedly
-> rediscovering terminology, constraints, and intent.
+This document provides the authoritative domain and architectural knowledge for Nabu-V1. It aligns with architectural decision records in `docs/adr/`.
 
 ---
 
-## Product
+## Product overview
 
-A private, self-hosted Telegram bot (`Nabu`) for searching and delivering books retrieved from shadow libraries (Anna's Archive and Libgen), cached locally in SQLite (with FTS5) and pinned in a local IPFS/Kubo node.
+Nabu is a private, self-hosted Telegram bot that functions as a high-throughput, zero-storage **link resolver** for book discovery. When you search for a book, Nabu queries a local SQLite full-text index (`FTS5`) and search cache, falls back to upstream shadow library mirrors (Library Genesis dual-fork clusters) using bounded concurrency, and returns direct multi-mirror browser download links built from the book's MD5 hash.
 
-## Users
+Nabu never downloads, buffers, or stores book binaries on the host server.
 
-A small, authorized private whitelist of users specified by numeric Telegram user IDs in `TELEGRAM_ALLOWED_USER_IDS`.
+---
 
-## Core Problem
+## Target users
 
-Accessing shadow libraries directly via browser is fraught with broken mirrors, aggressive CAPTCHAs, waitlists, and intermittent connectivity. Nabu provides a private, automated Telegram interface that retrieves, validates, deduplicates, locally caches metadata, and pins files to a local IPFS node so future requests are instantaneous and persistent.
+Nabu is designed for a private whitelist of authorized users. You configure allowed users by listing their numeric Telegram user IDs in the `TELEGRAM_ALLOWED_USER_IDS` environment variable. Any request from an unauthorized user is rejected immediately with no data leakage.
 
-## Domain
+---
 
-- **Shadow Libraries:** Decentralized repositories of books, research papers, and periodicals. Anna's Archive functions as a metadata aggregator across Libgen and IPFS, frequently publishing direct IPFS Content Identifiers (CIDs). Libgen provides direct HTTP downloads and JSON/HTML search.
-- **IPFS / Kubo:** InterPlanetary File System daemon exposing an HTTP RPC API on `http://127.0.0.1:5001`. Supports streaming content blocks via `/api/v0/cat`, pinning CIDs via `/api/v0/pin/add`, and adding new files via `POST /api/v0/add`.
-- **Telegram Bot API:** Messaging platform interface operating via long-polling (`python-telegram-bot`). Constrained by a 50 MB (52,428,800 bytes) maximum document upload size and a 64-byte payload limit for inline keyboard `callback_data`.
+## Core problem and approach
 
-## Important Terms
+Direct browser access to shadow libraries often encounters ISP-level domain blocks, aggressive redirects, and intermittent database connection saturation. Conversely, traditional file-delivery bots encounter Telegram's 50 MB document upload limit, high server egress bandwidth costs, disk exhaustion risks, and legal exposure from redistributing copyright binaries.
+
+Nabu solves this by operating purely as a **link resolver**:
+
+1. **Search path:**
+   - Check `search_cache` table for fresh cached query results (24-hour default TTL).
+   - If missing or stale, query the local SQLite catalog using full-text search (`FTS5`).
+   - If local hits fall below the threshold (`LOCAL_RESULT_THRESHOLD=3`), execute a single upstream scrape via `SingleFlight` across active, healthy mirrors.
+   - Upsert discovered metadata and MD5 hashes into the catalog, update the search cache, and serve results.
+2. **Delivery path:**
+   - When you select a book result, Nabu constructs multi-mirror browser download URLs directly from the stored MD5 hash.
+   - Nabu delivers these links in a structured HTML message with **zero outbound network calls**. You tap the link to download the file directly in your browser.
+
+---
+
+## Domain terminology
+
+The following terms describe the core components of the link resolver architecture:
 
 | Term | Definition |
 |---|---|
-| **Kubo** | The reference Go implementation of IPFS, running locally as an RPC daemon on port 5001. |
-| **CID** | Content Identifier (IPFS hash, e.g. CIDv1 base32) uniquely identifying a file. |
-| **Shadow Library** | Online open-access book archives (Anna's Archive and Library Genesis). |
-| **Delivery Queue** | In-memory asyncio queue served by exactly 3 concurrent workers delivering cached/pinned books. |
-| **Acquisition Queue** | Separate in-memory asyncio queue served by 2 concurrent workers performing remote searches, resolves, and downloads. |
-| **Candidate Cache** | In-memory TTL cache storing uncommitted remote search results for inline keyboard navigation (`web:<token>:<index>`). |
-| **Magic Bytes** | Initial file header bytes inspected to verify actual MIME types (PDF, EPUB, MOBI) before catalog insertion or Telegram delivery. |
+| **Link resolver** | A system that indexes metadata and delivers direct upstream URLs without handling file binaries. |
+| **MD5 digest** | A 32-character hexadecimal hash that uniquely identifies an edition across Library Genesis databases. |
+| **`li-fork`** | Mirror cluster based on the `libgen.li` backend (`libgen.li`, `libgen.la`, `libgen.bz`). Uses `/index.php` for search and `/ads.php?md5=<md5>` for download pages. |
+| **`is-fork`** | Mirror cluster based on the `libgen.is` backend (`libgen.is`, `libgen.rs`, `libgen.st`). Uses `/search.php` for search and `/book/index.php?md5=<md5>` for download pages. |
+| **`SingleFlight`** | A concurrency synchronization primitive that ensures identical concurrent search queries share a single upstream HTTP request. |
+| **`HostRateLimiter`** | An in-memory rate limiter enforcing per-host request serialization and polite delays (`POLITE_DELAY_MS=750`). |
+| **`UserRateLimiter`** | A token-bucket rate limiter (5 tokens, 0.5 refill/sec) applied per user on upstream search requests. |
+| **`search_cache`** | A SQLite table mapping normalized queries to ordered lists of book IDs with expiration timestamps. |
+| **`mirrors` table** | A SQLite table tracking upstream mirror health, response latency, fail counts, and exponential cooldowns. |
 
-## Actors
+---
 
-- **Whitelisted Telegram Users:** Send search queries, inspect results, and trigger book downloads.
-- **Delivery Workers (3):** Stream files from local Kubo, validate size/type, upload documents to Telegram, and guarantee temp file cleanup.
-- **Acquisition Workers (2):** Execute sequential scraping across sources, resolve download handles (CID or HTTP), fetch payloads, pin into Kubo, and insert rows into SQLite.
-- **Kubo RPC Daemon:** Local service on localhost:5001 providing IPFS cat/add/pin operations.
-- **External Book Mirrors:** Anna's Archive and Libgen web endpoints subject to polite rate limiting and rotation.
+## System actors
+
+- **Authorized Telegram user:** Submits search queries, browses inline button results, and retrieves multi-mirror download links.
+- **Telegram bot application (`src/bot.py`):** Handles incoming messages and callbacks, verifies user authorization, and renders HTML responses.
+- **Search service (`src/search.py`):** Coordinates search caching, local full-text search, and upstream single-flight requests.
+- **Mirror manager (`src/sources/mirror_manager.py`):** Manages mirror health probes, latency records, and exponential backoff cooldowns (30s to 600s).
+- **Upstream mirror clusters:** Remote web endpoints providing book search results and client-side key-generation download pages.
+
+---
 
 ## Constraints
 
-- **Python Runtime:** Pinned to Python 3.12 via `.venv` and `uv`.
-- **No External Infrastructure:** No Redis, no Celery, no ORM, no web framework, no headless browser.
-- **Upload Limit:** Maximum file size for Telegram delivery is 52,428,800 bytes (50 MB). Files exceeding this must be aborted and deleted mid-stream.
-- **Kubo Retrieval Timeout:** 90-second hard deadline enforced via `asyncio.timeout(90)`.
-- **Acquisition Timeout:** 300-second hard deadline covering entire search, resolve, download, and pin cycle.
-- **Temporary File Hygiene:** Temporary files stream exclusively to `tmp/<job_id>.part` and must be deleted on every exit path in a `finally` block.
-- **Access Control:** Every handler verifies `user_id in config.allowed_user_ids`. Unauthorized users receive zero details.
+- **Python runtime:** Python 3.12 or later running in a virtual environment (`.venv`).
+- **Project layout:** All application source code resides under `src/`.
+- **Zero file persistence:** The server must not write book content bytes or temporary `.part` files to disk.
+- **Outbound concurrency:** Bound outbound HTTP requests with `MAX_UPSTREAM=4` and enforce a polite delay between requests to the same host.
+- **Upstream timeouts:** Individual socket connection attempts must not exceed 8 seconds (`CONNECT_TIMEOUT=8.0`).
+- **Authorization gating:** Every command and callback handler must verify the user ID against `TELEGRAM_ALLOWED_USER_IDS` before processing.
 
-## Non-Goals
+---
 
-- Public bot deployment (strictly private whitelist).
-- Multi-node clustering or distributed queues.
-- Web UI, dashboard, or REST API.
-- Storing full book binaries inside SQLite.
-- Headless browser automation (Playwright/Selenium).
+## Non-goals
 
-## Important Decisions
+- Downloading, proxying, or hosting book files on the server.
+- Operating as a public or open bot without whitelist authorization.
+- Running heavy web frameworks, REST APIs, or background task queues (such as Celery or Redis).
+- Automating browser interactions with headless drivers (such as Playwright or Selenium).
 
-- [ADR 0001](file:///c:/Users/Richmond/Desktop/Codebase/Nabu-V1/docs/adr/0001-architecture.md): Shadow Library Ingestion, Local IPFS Pinning, and Dual-Queue Bot Architecture.
+---
+
+## Key architecture decisions
+
+- [ADR 0001: Initial Architecture (Superseded)](docs/adr/0001-architecture.md) — Documented the legacy file-delivery and IPFS pinning design.
+- [ADR 0002: Transition to Zero-Storage Link Resolver Architecture](docs/adr/0002-link-resolver-architecture.md) — Accepted architectural pivot eliminating server file storage, demoting IPFS, and instituting cache-first link resolution.

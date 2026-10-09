@@ -1,13 +1,14 @@
 """Data models for Nabu-V1.
 
 Plain dataclasses representing domain entities, database records, search results,
-and queue jobs. No ORM.
+and mirrors. No ORM.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -51,51 +52,27 @@ class SearchHit:
     raw: dict[str, Any] | None = None
 
 
-@dataclass(frozen=True)
-class DownloadHandle:
-    kind: Literal["cid", "url"]
-    cid: str | None = None
-    url: str | None = None
-    filesize: int | None = None
-    filename: str | None = None
-    extension: str | None = None
-    source: str | None = None
-    md5: str | None = None
-
-
-@dataclass(frozen=True)
-class DownloadJob:
-    job_id: str
-    book_id: int
-    user_id: int
-    chat_id: int
-    enqueued_at: float
-    title: str = ""
-
-
-AcquisitionStatus = Literal[
-    "queued",
-    "searching",
-    "resolving",
-    "downloading",
-    "pinning",
-    "imported",
-    "failed",
-    "cancelled",
-]
-
-
 @dataclass
-class AcquisitionJob:
-    job_id: str
-    query: str
-    user_id: int
-    chat_id: int
-    enqueued_at: float
-    md5: str | None = None
-    book_id: int | None = None
-    source: str | None = None
-    status: AcquisitionStatus = "queued"
-    error: str | None = None
-    acq_id: int | None = None
-    hit: SearchHit | None = None
+class Mirror:
+    id: int
+    source: str
+    url: str
+    fork: str  # 'li' | 'is'
+    enabled: bool = True
+    fail_count: int = 0
+    last_ok: str | None = None
+    last_error: str | None = None
+    cooldown_until: float | None = None
+    latency_ms: int | None = None
+
+    @property
+    def host(self) -> str:
+        return urlparse(self.url).netloc
+
+
+@dataclass(frozen=True)
+class SearchOutcome:
+    hits: list[Book]
+    source: Literal["cache", "local", "upstream"]
+    degraded: bool = False
+

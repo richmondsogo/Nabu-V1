@@ -1,6 +1,6 @@
-"""Bulk database importer and MD5-to-CID backfill CLI for Nabu-V1.
+"""Bulk database importer CLI for Nabu-V1 Link Resolver catalog.
 
-Seeds the SQLite catalog from CSV or JSON metadata dumps, skips duplicates,
+Seeds the SQLite catalog from CSV, JSON, or JSONL metadata dumps, skips duplicates,
 normalizes metadata, and supports bulk CID backfilling from MD5 mappings.
 """
 
@@ -14,6 +14,11 @@ import logging
 from pathlib import Path
 import sys
 from typing import Any
+
+# Ensure src directory is on sys.path for direct script execution
+_SRC_DIR = Path(__file__).resolve().parent
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 from database import Database
 

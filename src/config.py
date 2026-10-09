@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Mapping
 from urllib.parse import urlparse
 
-from dotenv import dotenv_values, load_dotenv
+from dotenv import load_dotenv
 
 
 class ConfigError(ValueError):
@@ -24,19 +24,36 @@ class Config:
     telegram_token: str
     allowed_user_ids: frozenset[int]
     db_path: Path
-    ipfs_api_url: str
-    temp_dir: Path
-    max_concurrent_downloads: int = 3
-    download_timeout: float = 90.0
+    # Link Resolver settings
+    local_result_threshold: int = 3
+    search_cache_ttl: float = 86400.0
+    max_upstream: int = 4
+    polite_delay_ms: int = 750
+    connect_timeout: float = 8.0
+    singleflight_timeout: float = 15.0
+    result_limit: int = 5
+    user_bucket_tokens: float = 5.0
+    user_bucket_refill: float = 0.5
+    refresh_cooldown: float = 300.0
+    mirror_libgen: tuple[str, ...] = (
+        "https://libgen.li",
+        "https://libgen.la",
+        "https://libgen.bz",
+        "https://libgen.is",
+        "https://libgen.rs",
+    )
+    # Accepted but unused backwards-compatibility fields
+    temp_dir: Path = Path("tmp")
     max_telegram_file_size: int = 52_428_800
-    source_priority: tuple[str, ...] = ("annas", "libgen")
+    download_timeout: float = 90.0
+    ipfs_api_url: str = "http://127.0.0.1:5001"
+    max_concurrent_downloads: int = 3
+    source_priority: tuple[str, ...] = ("libgen",)
     max_acquire_jobs: int = 2
     acquire_timeout: float = 300.0
     scrape_timeout: float = 20.0
-    polite_delay_ms: int = 750
     auto_acquire: bool = True
     mirror_anna: tuple[str, ...] = ("https://annas-archive.org", "https://annas-archive.se")
-    mirror_libgen: tuple[str, ...] = ("https://libgen.is", "https://libgen.rs", "https://libgen.st")
     aa_api_key: str = ""
     public_gateways: tuple[str, ...] = ("https://ipfs.io/ipfs", "https://dweb.link/ipfs")
 
@@ -70,7 +87,7 @@ def _parse_int(raw: str | None, var_name: str, default: int, min_val: int = 1) -
     return val
 
 
-def _parse_float(raw: str | None, var_name: str, default: float, min_val: float = 0.1) -> float:
+def _parse_float(raw: str | None, var_name: str, default: float, min_val: float = 0.0) -> float:
     if raw is None or not raw.strip():
         return default
     try:
@@ -139,25 +156,36 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
     raw_ipfs_url = raw_env.get("IPFS_API_URL", "http://127.0.0.1:5001")
     ipfs_api_url = _validate_url(raw_ipfs_url, "IPFS_API_URL")
 
+    # Link Resolver config items
+    local_result_threshold = _parse_int(raw_env.get("LOCAL_RESULT_THRESHOLD"), "LOCAL_RESULT_THRESHOLD", 3)
+    search_cache_ttl = _parse_float(raw_env.get("SEARCH_CACHE_TTL"), "SEARCH_CACHE_TTL", 86400.0)
+    max_upstream = _parse_int(raw_env.get("MAX_UPSTREAM"), "MAX_UPSTREAM", 4)
+    polite_delay_ms = _parse_int(raw_env.get("POLITE_DELAY_MS"), "POLITE_DELAY_MS", 750, min_val=0)
+    connect_timeout = _parse_float(raw_env.get("CONNECT_TIMEOUT"), "CONNECT_TIMEOUT", 8.0)
+    singleflight_timeout = _parse_float(raw_env.get("SINGLEFLIGHT_TIMEOUT"), "SINGLEFLIGHT_TIMEOUT", 15.0)
+    result_limit = _parse_int(raw_env.get("RESULT_LIMIT"), "RESULT_LIMIT", 5)
+    user_bucket_tokens = _parse_float(raw_env.get("USER_BUCKET_TOKENS"), "USER_BUCKET_TOKENS", 5.0)
+    user_bucket_refill = _parse_float(raw_env.get("USER_BUCKET_REFILL"), "USER_BUCKET_REFILL", 0.5)
+    refresh_cooldown = _parse_float(raw_env.get("REFRESH_COOLDOWN"), "REFRESH_COOLDOWN", 300.0)
+
+    # Backwards compatibility / unused fields
     max_downloads = _parse_int(raw_env.get("MAX_CONCURRENT_DOWNLOADS"), "MAX_CONCURRENT_DOWNLOADS", 3)
     download_timeout = _parse_float(raw_env.get("DOWNLOAD_TIMEOUT"), "DOWNLOAD_TIMEOUT", 90.0)
     max_tg_size = _parse_int(raw_env.get("MAX_TELEGRAM_FILE_SIZE"), "MAX_TELEGRAM_FILE_SIZE", 52_428_800)
 
-    raw_priority = raw_env.get("SOURCE_PRIORITY", "annas,libgen")
-    source_priority = tuple(s.strip() for s in raw_priority.split(",") if s.strip())
-    if not source_priority:
-        source_priority = ("annas", "libgen")
+    raw_priority = raw_env.get("SOURCE_PRIORITY", "libgen")
+    source_priority = tuple(s.strip() for s in raw_priority.split(",") if s.strip()) or ("libgen",)
 
     max_acquire_jobs = _parse_int(raw_env.get("MAX_ACQUIRE_JOBS"), "MAX_ACQUIRE_JOBS", 2)
     acquire_timeout = _parse_float(raw_env.get("ACQUIRE_TIMEOUT"), "ACQUIRE_TIMEOUT", 300.0)
     scrape_timeout = _parse_float(raw_env.get("SCRAPE_TIMEOUT"), "SCRAPE_TIMEOUT", 20.0)
-    polite_delay_ms = _parse_int(raw_env.get("POLITE_DELAY_MS"), "POLITE_DELAY_MS", 750, min_val=0)
     auto_acquire = _parse_bool(raw_env.get("AUTO_ACQUIRE"), default=True)
 
     raw_anna_mirrors = raw_env.get("MIRROR_ANNA", "https://annas-archive.org,https://annas-archive.se")
     mirror_anna = _parse_url_list(raw_anna_mirrors, "MIRROR_ANNA")
 
-    raw_libgen_mirrors = raw_env.get("MIRROR_LIBGEN", "https://libgen.is,https://libgen.rs,https://libgen.st")
+    default_libgen = "https://libgen.li,https://libgen.la,https://libgen.bz,https://libgen.is,https://libgen.rs"
+    raw_libgen_mirrors = raw_env.get("MIRROR_LIBGEN", default_libgen)
     mirror_libgen = _parse_url_list(raw_libgen_mirrors, "MIRROR_LIBGEN")
 
     aa_api_key = (raw_env.get("AA_API_KEY") or "").strip()
@@ -169,19 +197,28 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
         telegram_token=telegram_token,
         allowed_user_ids=frozenset(allowed_ids),
         db_path=db_path,
-        ipfs_api_url=ipfs_api_url,
+        local_result_threshold=local_result_threshold,
+        search_cache_ttl=search_cache_ttl,
+        max_upstream=max_upstream,
+        polite_delay_ms=polite_delay_ms,
+        connect_timeout=connect_timeout,
+        singleflight_timeout=singleflight_timeout,
+        result_limit=result_limit,
+        user_bucket_tokens=user_bucket_tokens,
+        user_bucket_refill=user_bucket_refill,
+        refresh_cooldown=refresh_cooldown,
+        mirror_libgen=mirror_libgen,
         temp_dir=temp_dir,
-        max_concurrent_downloads=max_downloads,
-        download_timeout=download_timeout,
         max_telegram_file_size=max_tg_size,
+        download_timeout=download_timeout,
+        ipfs_api_url=ipfs_api_url,
+        max_concurrent_downloads=max_downloads,
         source_priority=source_priority,
         max_acquire_jobs=max_acquire_jobs,
         acquire_timeout=acquire_timeout,
         scrape_timeout=scrape_timeout,
-        polite_delay_ms=polite_delay_ms,
         auto_acquire=auto_acquire,
         mirror_anna=mirror_anna,
-        mirror_libgen=mirror_libgen,
         aa_api_key=aa_api_key,
         public_gateways=public_gateways,
     )

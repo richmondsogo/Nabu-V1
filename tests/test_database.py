@@ -301,3 +301,58 @@ async def test_async_database_operations(tmp_path: Path):
     src = await db.get_source("annas")
     assert src is not None
     assert src["name"] == "annas"
+
+
+@pytest.mark.asyncio
+async def test_upsert_book_idempotent_on_md5(test_db: Database):
+    bid1 = await test_db.upsert_book(title="Rust for Rustaceans", author="Jon Gjengset", md5="rust1234567890abcdef")
+    assert bid1 > 0
+
+    # Second upsert with identical md5 should return existing id
+    bid2 = await test_db.upsert_book(title="Rust for Rustaceans (Different Title)", author="Jon Gjengset", md5="rust1234567890abcdef")
+    assert bid2 == bid1
+
+    # Book without md5 always inserts new id
+    bid3 = await test_db.upsert_book(title="Unknown Book", author="Nobody", md5=None)
+    bid4 = await test_db.upsert_book(title="Unknown Book", author="Nobody", md5=None)
+    assert bid3 != bid4
+
+
+@pytest.mark.asyncio
+async def test_search_cache_lifecycle(test_db: Database):
+    assert (await test_db.get_search_cache("rust")) is None
+
+    await test_db.set_search_cache("rust", [1, 2, 3], ttl=3600.0)
+    cached = await test_db.get_search_cache("rust")
+    assert cached is not None
+    ids, expires_at = cached
+    assert ids == [1, 2, 3]
+    assert expires_at > 0
+
+
+@pytest.mark.asyncio
+async def test_get_books_by_ids_preserves_order(test_db: Database):
+    b1 = await test_db.insert_book(title="Book 1")
+    b2 = await test_db.insert_book(title="Book 2")
+    b3 = await test_db.insert_book(title="Book 3")
+
+    books = await test_db.get_books_by_ids([b3.id, b1.id, b2.id])
+    assert [b.id for b in books] == [b3.id, b1.id, b2.id]
+
+
+@pytest.mark.asyncio
+async def test_mirrors_health_and_cooldown(test_db: Database):
+    mirrors = await test_db.active_mirrors("libgen")
+    assert len(mirrors) == 5
+    first_url = mirrors[0].url
+
+    # Record failure -> should set backoff cooldown
+    await test_db.record_mirror_result(first_url, ok=False, error="Connection timeout")
+    active_after_fail = await test_db.active_mirrors("libgen")
+    assert len(active_after_fail) == 4
+    assert first_url not in [m.url for m in active_after_fail]
+
+    # Record success -> resets cooldown and fail_count
+    await test_db.record_mirror_result(first_url, ok=True, latency_ms=120)
+    active_recovered = await test_db.active_mirrors("libgen")
+    assert len(active_recovered) == 5

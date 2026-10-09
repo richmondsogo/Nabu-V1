@@ -1,0 +1,1096 @@
+﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<META HTTP-EQUIV="CACHE-CONTROL" CONTENT="max-age=604800, must-revalidate">
+	<meta name="rating" content="general">
+	<!--<link href="/rss/index.php" rel="alternate" type="application/rss+xml" title="News" />-->
+	<link rel="shortcut icon" href="/img/favicon.ico" type="image/x-icon">
+	<title>Library Genesis</title>
+		
+	<!--[if IE 6]>
+	<style>
+		body {behavior: url("/csshover3.htc");}
+		#menu li .drop {background:url("img/drop.gif") no-repeat right 8px; 
+	</style>
+	<![endif]-->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">	
+	
+<link href="/css/font.min.css" rel="stylesheet">	
+<style>
+nav.navbar .dropdown:hover > .dropdown-menu {
+ display: block; 
+}
+.bd-placeholder-img {
+	font-size: 1.125rem;
+	text-anchor: middle;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+}
+@media (min-width: 768px) {
+			.bd-placeholder-img-lg {
+			font-size: 3.5rem;
+		}
+	}
+
+.panel-heading .accordion-toggle:after {
+    font-family: "Glyphicons Halflings";  
+    content: "\e114";    
+    float: right;       
+    color: grey;         
+}
+.panel-heading .accordion-toggle.collapsed:after {
+    content: "\e080";   
+}
+.tooltip-inner {
+    max-width: 350px;
+    width: 350px; 
+}
+h1 {
+	display: block; 
+	font-size: 1.8rem; 
+	font-weight: bold; 
+	font-family: Georgia, "Times New Roman", Times, serif;  color: #A00000; 
+}
+#tablelibgen td { 
+	font-family: "Pt Sans", Tahoma, Helvetica, sans-serif; 
+	margin: 0; 
+	padding: 0em 3px; 
+	font-size: 1rem;
+}
+
+#tablelibgen1 td { 
+	font-family: "Pt Sans", Tahoma, Helvetica, sans-serif; 
+	margin: 0; 
+	padding: 0em 3px; 
+	font-size: 1rem;
+}
+
+.taghide {
+    display: none; 
+}
+.taghide + label ~ div {
+    display: none;
+}
+/* оформляем текст label */
+.taghide + label {
+    display: inline-block; 
+}
+/* вид текста label при активном переключателе */
+
+/* когда чекбокс активен показываем блоки с содержанием  */
+.taghide:checked + label + div {
+    display: block; 
+}
+
+
+
+/*.navbar {
+	background-color: #BBBBBB;
+}*/
+	</style>
+
+	<link rel="stylesheet" href="/css/dark-mode.css">
+	<script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+<link rel="stylesheet" type="text/css" href="../css/paginator3000.css" />
+<script type="text/javascript" src="../js/paginator3000.js"></script><script data-cfasync="false" async type="text/javascript" src="//je.deuxseethe.com/rUJqARoMIAl18z/146156"></script>
+
+
+
+
+</head>
+<body>    
+<nav class="navbar navbar-expand-md navbar-dark bg-secondary  mb-1">
+  
+   <a class="navbar-brand" href="/index.php">
+    <img src="/img/logo.png"  height="30" alt="">
+  </a>
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+  <div class="collapse navbar-collapse" id="navbarCollapse">
+    <ul class="navbar-nav mr-auto">
+      <li class="nav-item active">
+        <a class="nav-link" href="/community/app.php/article/news">NEWS <span class="sr-only">(current)</span></a>
+      </li>
+      <li class="nav-item active">
+        <a class="nav-link" href="/community/">FORUM <span class="sr-only">(current)</span></a>
+      </li>
+	
+      <li class="nav-item dropdown">
+<a class="btn btn-secondary dropdown-toggle" href="/community/ucp.php?mode=login" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          LOGIN
+        </a>
+        <div class="dropdown-menu" aria-labelledby="dropdown01">    
+          <a class="dropdown-item" href="/community/ucp.php?mode=register">Register</a>
+        </div>
+      </li>
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="#" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          DOWNLOAD
+        </a>
+        <div class="dropdown-menu" aria-labelledby="dropdown01">      
+
+          <a class="dropdown-item" href="/mirrors.php">Mirrors</a>
+          <a class="dropdown-item" href="http://libgenfrialc7tguyjywa36vtrdcplwpxaw43h6o63dmmwhvavo5rqqd.onion/">TOR</a>
+
+	<div class="dropdown-divider"></div>
+         <h6 class="dropdown-header">P2P</h6>
+          <a class="dropdown-item" href="/torrents/">Torrents</a>
+          <a class="dropdown-item" href="https://ipdl.cat/data/torrents.html">Torrents status</a>
+          <a class="dropdown-item" href="/nzb/">Usenet (*.nzb)</a>
+          <a class="dropdown-item" href="/soft/">Soft</a>
+	<!--https://phillm.net/libgen-stats-table.php-->
+
+
+
+
+	<div class="dropdown-divider"></div>
+         <h6 class="dropdown-header">DB Dumps</h6>
+          <a class="dropdown-item" href="/dirlist.php?dir=dbdumps">Libgen</a>
+          <a class="dropdown-item" href="http://libgen.rs/dbdumps/">libgen.rs (gen.lib.rus.ec)</a>
+
+	<!--<div class="dropdown-divider"></div>
+ 	 <a class="dropdown-item" href="/magz0/">Unsorted magz</a>
+ 	 <a class="dropdown-item" href="/fict0/">Unsorted fiction</a>
+
+	 <a class="dropdown-item" href="/comics4/">Unsorted comics</a>
+        </div>-->
+
+      </li>
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="librarian.php" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          UPLOAD
+        </a>
+        <div class="dropdown-menu" aria-labelledby="dropdown01">  
+          <a class="dropdown-item" href="ftp://ftp.libgen.bz/upload/">FTP</a> 
+        </div>
+      </li>
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="/index.php?req=fmode:last&topics1=all" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          LAST
+        </a>
+
+        <div class="dropdown-menu" aria-labelledby="dropdown01">
+	<a class="dropdown-item" href="/index.php?req=fmode:last&topics1=all"><b>Files</b></a>
+
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=l">Libgen</a>
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=a">Scientific Articles</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=f">Fiction</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=c">Comics</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=m">Magazines</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=s">Standards</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=r">Fiction RUS</a>
+	<div class="dropdown-divider"></div>
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=e">Editions</a> 
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=s">Series</a>
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=p">Publishers</a> 
+        <!--  <a class="dropdown-item" href="/index.php?req=mode:last&curtab=f">Files</a> -->
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=a">Authors</a> 
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=w">Works</a>
+
+
+  
+        </div>
+
+
+      </li>
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="#" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          OTHERS
+        </a>
+
+        <div class="dropdown-menu" aria-labelledby="dropdown01">  
+          <a class="dropdown-item" href="json.php">API</a> 
+          <a class="dropdown-item" href="rss.php">RSS</a> 
+          <a class="dropdown-item" href="top.php">Top 100 users</a> 
+          <a class="dropdown-item" href="stat.php">Stats</a>
+
+	<a class="dropdown-item" href="topics.php">Topics</a>
+
+          <a class="dropdown-item" href="batchsearchindex.php">Batch search</a>  
+          <a class="dropdown-item" href="biblioservice.php">Bibliographic services</a>
+          <a class="dropdown-item" href="https://wiki.mhut.org/software:libgen_desktop">Libgen librarian for desktop</a>
+
+
+          <a class="dropdown-item" href="/code/">Source (PHP)</a>
+          <a class="dropdown-item" href="/soft/">LG soft</a>
+          <!--<a class="dropdown-item" href="/import/">Import local files in LG format</a>-->
+          <a class="dropdown-item" href="https://z-library.se/fulltext/">Full text search</a>
+
+
+
+        </div>
+      </li>
+
+
+
+     <!-- <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="topics.php" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          Topics
+        </a>
+      </li>
+-->
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="#" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          LINKS
+        </a>
+
+        <div class="dropdown-menu" aria-labelledby="dropdown01">  
+
+
+          
+          <a class="dropdown-item" href="http://sci-hub.ru">Sci-hub</a> 
+          <a class="dropdown-item" href="http://magzdb.org">Magzdb.org</a>
+
+          <a class="dropdown-item" href="http://nlr.ru/rlin/Periodika_rus.php">РНБ</a>
+          <a class="dropdown-item" href="http://rsl.ru/">РГБ</a>
+          <a class="dropdown-item" href="http://loc.gov/">LOC</a>
+          <a class="dropdown-item" href="https://comicvine.gamespot.com/">ComicVine</a>
+          <a class="dropdown-item" href="http://cyberleninka.ru/">Cyberleninka</a>
+          <a class="dropdown-item" href="http://lib.rus.ec/">Lib.rus.ec</a>
+          <a class="dropdown-item" href="http://flibusta.net/">Flibusta.net</a>
+          <a class="dropdown-item" href="http://goodreads.com/">Goodreads.com</a>
+          <a class="dropdown-item" href="http://worldcat.org/">Worldcat.org</a>
+          <a class="dropdown-item" href="https://wiki.archiveteam.org/">Archive team</a>
+          <a class="dropdown-item" href="https://www.reddit.com/r/libgen/">Reddit</a>
+          <a class="dropdown-item" href="http://annas-archive.org/">Anna's Archive</a>
+          <a class="dropdown-item" href="https://welib.org/">Welib</a>
+          <a class="dropdown-item" href="https://open-slum.org/">The Shadow Library Uptime Monitor</a>
+
+        </div>
+
+      </li>
+
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary" href="index.php?req=mode:req&curtab=e" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          WANTED
+        </a>
+      </li>
+
+    </ul>
+  </div>
+
+  <div class="nav-link">
+
+    <div class="custom-control custom-switch">
+      <input type="checkbox" class="custom-control-input" id="darkSwitch">
+      <label class="custom-control-label" for="darkSwitch">🌓</label>
+    </div>
+    <script src="/js/dark-mode-switch.js"></script>
+  </div>
+   <a class="navbar-brand" href="setlang.php?req=rust&lang=ru">RU</a>
+</nav>
+<form class="card p-2 needs-validation" novalidate id="formlibgen" action="index.php" enctype="multipart/form-data" METHOD="GET">
+<div class="input-group mb-3" >
+	<input autofocus type="text" class="form-control" placeholder="Input value" name="req" aria-label="input text" aria-describedby="button-addon2" value="rust" required>
+	<div class="input-group-append">
+	<button class="btn btn-outline-secondary"  id="button-addon2" type="submit">&nbsp;&nbsp;&nbsp;&nbsp;&#128269;&nbsp;&nbsp;&nbsp;&nbsp;</button>
+	</div>
+
+	<div class="invalid-feedback">Input value</div>
+</div>
+
+<div class="container-fluid">
+	<div class="row">
+		<div class="col-8">	
+			<div class="d-block" id="topic">
+				<strong>Search in fields:</strong>
+				<input type="checkbox" checked class="column-input" id="colt" name="columns[]" value="t">
+				<label class="column-label" for="coltitle">Title</label>
+				<input type="checkbox" checked class="column-input" id="cola" name="columns[]" value="a">
+				<label class="column-label" for="colauthor">Author(s)</label>
+				<input type="checkbox" checked class="column-input" id="cols" name="columns[]" value="s">
+				<label class="column-label" for="colseries">Series</label>
+				<input type="checkbox" checked class="column-input" id="coly" name="columns[]" value="y">
+				<label class="column-label" for="colyear">Year</label>
+				<input type="checkbox" checked class="column-input" id="colp" name="columns[]" value="p">
+				<label class="column-label" for="colpublisher">Publisher</label>
+				<input type="checkbox" checked class="column-input" id="coli" name="columns[]" value="i">
+				<label class="column-label" for="colisbn">ISBN</label>
+	  		</div>
+	
+	  		<div class="d-block" id="object">
+				<strong>Search in objects:</strong>
+				<input type="checkbox" checked class="column-input" id="objf" name="objects[]" value="f">
+				<label class="column-label" for="objf">Files</label>
+				<input type="checkbox" checked class="column-input" id="obje" name="objects[]" value="e">
+				<label class="column-label" for="obje">Editions</label>
+				<input type="checkbox" checked class="column-input" id="objs" name="objects[]" value="s">
+				<label class="column-label" for="objs">Series</label>
+				<input type="checkbox" checked class="column-input" id="obja" name="objects[]" value="a">
+				<label class="column-label" for="obja">Authors</label>
+				<input type="checkbox" checked class="column-input" id="objp" name="objects[]" value="p">
+				<label class="column-label" for="objp">Publishers</label>
+				<input type="checkbox" checked class="column-input" id="objw" name="objects[]" value="w">
+				<label class="column-label" for="objw">Works</label>
+			</div>
+			<div class="d-block" id="column">
+				<strong>Search in topics :</strong>
+				<input type="checkbox" checked class="column-input" id="topl" name="topics[]" value="l" >
+				<label class="column-label" for="topl">Libgen</label>
+				<input type="checkbox" checked class="column-input" id="topc" name="topics[]" value="c" >
+				<label class="column-label" for="topc">Comics</label>
+				<input type="checkbox" checked class="column-input" id="topf" name="topics[]" value="f" >
+				<label class="column-label" for="topf">Fiction</label>
+				<input type="checkbox" checked class="column-input" id="topa" name="topics[]" value="a" >
+				<label class="column-label" for="topa">Scientific Articles</label>
+				<input type="checkbox" checked class="column-input" id="topm" name="topics[]" value="m" >
+				<label class="column-label" for="topm">Magazines</label>
+				<input type="checkbox" checked class="column-input" id="topr" name="topics[]" value="r" >
+				<label class="column-label" for="topr">Fiction RUS</label>
+				<input type="checkbox" checked class="column-input" id="tops" name="topics[]" value="s" >
+				<label class="column-label" for="tops">Standards</label>
+			</div>
+ 		</div>
+		<div class="col-4">
+
+			<div >
+				<strong>Results per page:</strong>
+
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="res25" name="res" class="custom-control-input" value="25" checked>
+				<label class="custom-control-label" for="res25">25</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="res50" name="res" class="custom-control-input" value="50" >
+				<label class="custom-control-label" for="res50">50</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="res100" name="res" class="custom-control-input" value="100" >
+				<label class="custom-control-label" for="res100">100</label>
+
+				</div>
+ 			</div>
+			<div class="d-block">
+				<table><tr><td>
+					<div class="custom-control custom-switch">
+						<input type="checkbox" class="custom-control-input" id="covers" name="covers" >
+						<label class="custom-control-label" for="covers"><strong>Show Covers</strong></label>
+						<script type="text/javascript">
+						$("input[id=covers]").change(function(){
+							if($(this).is(":checked")==false)
+							{
+								document.cookie = "covers=; expires=Thu 01-Jan-70 00:00:01 GMT;";
+							}
+						});				
+						</script>
+					</div>
+					</td><td> 
+					<div class="custom-control custom-switch">
+						<input type="checkbox" class="custom-control-input" id="showch" name="showch" >
+						<label class="custom-control-label" for="showch"><strong>Show chapters</strong></label>
+						<script type="text/javascript">
+						$("input[id=showch]").change(function(){
+							if($(this).is(":checked")==false)
+							{
+								document.cookie = "showch=; expires=Thu 01-Jan-70 00:00:01 GMT;";
+							}
+						});				
+						</script>
+					</div>
+				</td></tr></table>
+
+ 			</div>
+
+			<div class="d-block">
+
+				<div class="custom-control custom-switch">
+					<input type="checkbox" class="custom-control-input" id="gmode" name="gmode" >
+					<label class="custom-control-label" for="gmode" ><strong>Google mode <a href="#" data-toggle="modal" data-target="#googlemodemodal">?</a></strong></label>
+					<script type="text/javascript">
+					$("input[id=gmode]").change(function(){
+						if($(this).is(":checked")==false)
+						{
+							document.cookie = "gmode=; expires=Thu 01-Jan-70 00:00:01 GMT;";
+						}
+					});
+					</script>
+					
+				</div>
+ 			</div>
+
+			<div >
+
+
+				<strong>Seach in files:</strong>
+
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="all" name="filesuns" class="custom-control-input" value="all" checked>
+				<label class="custom-control-label" for="all">All</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="sort" name="filesuns" class="custom-control-input" value="sort" >
+				<label class="custom-control-label" for="sort">Only sorted</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="unsort" name="filesuns" class="custom-control-input" value="unsort" >
+				<label class="custom-control-label" for="unsort">Only uns.</label>
+				</div>
+
+
+
+ 			</div>
+
+ 		</div>
+	</div>
+</div>
+</form><ul class="nav nav-tabs "><li class="nav-item">
+ <a class="nav-link active " href="/index.php?req=rust&curtab=f">Files <span class="badge badge-primary">16997</span> <i>Showing the first  2000</i></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=rust&curtab=e">Editions <span class="badge badge-primary">26418</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=rust&curtab=s">Series <span class="badge badge-primary">18</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=rust&curtab=a">Authors <span class="badge badge-primary">10</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=rust&curtab=p">Publishers <span class="badge badge-primary">0</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=rust&curtab=w">Works <span class="badge badge-primary">169</span></a>
+</li><li class="navbar-right" style="float: right !important;"><a class="nav-link" href="/json.php?object=f&ids=93911351,93911352,97505425,98253581,98253590,98253597,98253633,83253696,96713462,19765,42175,114217,118480,118481,118482,296760,340032,359515,451945,792275,948189,948190,949732,1145195,1259183,1259184,1259185,1259186,1624380,1706512,1706513,1706514,1706515,1755861,1755862,1780941,1858174,1858175,1858176,1858177,1858178,1858179,1883887,1984021,2862295,3245251,4657103,5853108,5853109,6001390,6150098,14686319,23060360,26978343,27036691,28501799,36794728,39087205,40995232,44385099,49155587,57648740,62764942,65461578,65632378,84684631,93097869,93315692,93656346,93911333,93911345,97177893,97177894,97920310,99691738,99691739,101444529,101709847,101808295,102063204,102064065,102064196,102086077,102086163,102328013,102733622,103981591,104031482,104195222,104421169,104506491,104859828,106845707,108110769,111767903,111999122,112034394,112034395,112034396,112283720,112335294,112403093,112403094,112403095,112403096,112403097,112703511,113384256,113832055,113834573,113835129,113859819,113860386,114813489,114849127,114849128,114849131,115313022,115319674,115319675,115377149,115521935,36841301,43678066,93973929,94001466,99280512,12374686,13364026,19446706,34216985,35472797,37379967,52606288,68456383,68503972,71503651,72159464,72231045,76728592,87183936,93389176,93434974,93550025,93626045,93641821,96753793,97778225,98566462,98566719,98580169,102310832,104836218,104926073,108240628,108627941,559411,5068672,5068673,9096940,10920368,10963484,10963896,11005885,11014268,11015177,11673054,11774264,11796438,11927611,12374691,12376004,12376006,12377616,12378874,12380369,12381792,12389661,12939187,13249433,13522463,13794473,13802312,13802313,13884334,13884886,13885748,13885959,13886579,13886586,13886651,13886753,13886818,14376577,14387047,14506789,14507038,14507485,14507782,14508325,14522109,14736358,15076867,15413795,15673254,15882918,15884640,15962691,15968073,16245349,16753532,16753533,17343645,18671025,18798793,19446648,19446806,19834026,20375932,20452860,20452948,20890828,20913898,20914828,20915443,20915444,20915957,20916534,20916535,20916633,20916965,20917010,20917018,20917474,20917797,20918925,20918927,20919610,20919611,21956321,21998762,21999172,22003055,22329528,22329986,22437284,22438067,23613879,23889489,23891040,24738655,24739353,24739362,24739426,24739428,24739540,24964733,24974140,25118587,25118779,26926933,27100992,27101016,27619644,28211953,28471972,28638012,28671181,28678289,28684100,28722483,29494912,29909619,34238035,35118430,35118442,35225475,36142246,36555735,36754513,36778565,37067118,37079072,37196207,37202216,37294881,37306216,37334364,37337271,37419757,37484284,37515986,37518725,37549558,37604847,37611867,38251231,38277896,38278390,38379778,38720338,38859843,38870009,39181113,39506364,40069715,40213331,40349627,40439610,40727720,40736113,41079768,41268019,42083207,42164381,42230328,42264129,42752800,42767415,42791726,43065555,43424949,43618501,43618953,44066848,44162009,44490639,45039072,45392769,46467533,46728841,47295081,48860051,48896755,48964570,49164992,49850405,50604199,50739321,50765241,52253391,52951836,52972679,56134324,56254611,56825961,58886730,59076624,60395464,60404897,60431822,60977737,61105184,61372491,61779545,62293437,62498351,62837481,66084669,66159730,66238616,66782017,68456359,68502872,68503035,68503833,68504161,68504374,68506093,68506392,68624200,68746922,68916229,69014113,69033717,69047088,70348366,70348531,71848165,72102417,72114594,72340749,72560869,72904730,73009987,73196484,73271617,73296083,73348390,73384252,74075438,74182887,74295993,74348548,74613465,74780970,74798325,75015440,75601032,75631316,75756244,75756986,75841926,75842747,75864109,75869143,75881307,76130223,76274870,76360989,76394292,76528018,76777554,76939651,76942367,76943008,77055371,77730433,78239811,78388181,78750258,79140536,79465487,80463787,80714884,81296314,82602513,82877856,82914907,83298345,83809965,83810010,84803325,84896131,85032746,85090768,85241505,85800803,86052698,86052969,86065752,86412807,86443291,86574526,86637617,86854461,86922040,87123870,87153456,87319064,87355493,87371471,87409735,87422128,87692547,87705433,87733935,88175373,88175543,88555010,88704339,88729974,88964017,89170946,89291271,89314984,89345230,89376306,89665127,89860206,90014609,90511924,90515208,90928780,90999832,91817089,93129163,93172632,93249089,93249091,93249092,93249093,93249094,93277408,93278215,93333437,93333438,93343298,93355118,93393060,93454637,93596812,93596813,93600530,93600531,93629499,93698003,93719405,93748576,93829120,93907991,93920206,93920212,93934745,93934746,93948409,93974636,94000540,94008977,94008978,94026828,94044398,94054625,94118008,94184156,94260899,94434351,94454372,95387422,95470543,95643741,96440659,96461866,96626062,96663927,96714740,96714741,96733892,96733893,97553280,97750328,97784791,97923844,97923845,97971922,98320265,98321844,98512189,98520418,98520419,98527600,98533648,98533668,98540202,98542344,98542345,98551144,98563032,98563097,98566743,98589209,98985566,98985567,99006234,99019717,99019961,99019988,99019993,99020056,99021507,99024209,99024642,99025188,99025410,99025411,99025767,99031679,99199089,99200910,99424928,99424991,100081171,100137247,100215189,102058059,102060885,102063179,102063276,102094781,102162539,102289901,102582777,102582778,102582779,102582780,102582781,102582782,102871597,103381579,103381592,103572783,103572785,103587468,103657083,103910539,103913312,103937009,104008767,104008768,104519821,104519868,104815468,104865588,105352354,105358253,105475435,106082940,106110632,106559354,107023307,107208907,107247319,107335698,107372569,107723676,107846354,107913050,107914538,108066666,108113267,108224000,108285241,108370032,108418391,108501802,108622798,108736194,108896014,108896043,109099641,109578402,109723522,109900517,109985465,111069101,111316752,111826909,112042111,112054895,112192446,112226380,112483083,112747967,112875192,113037194,113037195,113082471,113082472,113085619,113112381,113112387,113281297,113307367,113307719,113361000,113717788,113816758,114443501,114443502,114696554,115129739,115129741,115244743,115413314,115459311,115637698,115699021,115808470,115815177,115815179,115815181,115889650,116179421,116286211,116359569,116360323,116458189,18136,203229,460056,471601,488504,563527,601103,653825,694794,699012,792272,873748,877465,877466,935488,937337,958304,1267549,1274741,1274742,1274743,1274744,1274745,1274747,1624381,1624382,1710659,1726448,1777313,1805964,1835674,1835710,1835711,1835712,1870223,1870224,1870225,1870228,1874506,1971299,1973232,1973350,1978808,1978809,1978810,2676828,2732406,2760186,2802409,2873105,2914895,2952591,2963288,2968139,3027986,3083486,3110957,3159067,3290457,3462214,3502117,3811807,3881166,3881167,3881168,3881251,3881252,3881253,4082035,4108993,4282194,4294149,4324654,4327001,4346185,4382247,4382248,4382249,4382250,4426674,4427352,4464909,4464910,4464911,4464912,4464939,4464940,4464941,4464942,4464943,4464944,4464945,4482840,4482841,4482842,4482843,4540881,4549114,4549117,4598123,4608698,4622862,4642113,4642147,4646572,4719706,4719707,4727926,4761218,4761219,4787204,4787205,4800817,4804432,4804433,4808857,4893880,4926150,4968582,5058353,5073538,5073539,5101384,5131833,5160170,5160171,5162903,5171533,5182792,5207452,5207673,5215862,5215864,5216593,5218067,5220428,5224855,5224856,5227851,5293151,5294393,5294394,5298202,5298203,5298204,5308246,5308247,5316083,5316084,5320288,5378600,5396037,5396572,5416803,5416804,5460386,5464746,5473134,5479234,5479235,5479236,5521489,5529295,5548036,5548605,5552591,5552592,5579352,5579353,5579354,5589267,5606082,5607475,5654728,5654729,5659326,5682342,5682382,5703600,5741190,5810440,5818832,5818833,5819327,5820919,5833515,5840575,5854218,5854219,5879213,5921841,5929150,5929151,5933597,5940992,5941438,5947334,5947335,5950473,5950935,5951562,5959154,5967373,5992555,6002819,6023767,6023768,6032060,6038918,6044359,6044360,6044361,6066443,6072292,6091132,6136840,6150095,6150096,6150097,6171311,6191178,6192963,6196440,6200284,6200817,6208026,6259740,6259807,6259808,6264570,6268304,6308534,6326309,6356390,6400014,6400015,6400016,6400017,6400018,6400019,6420469,6420470,6421064,6421065,6421066,6421067,6421068,6421069,6421193,6421194,6421195,6421196,6421197,6426318,6427624,6427634,6434557,6437440,6444436,6444437,6444438,6444439,6444440,6452359,6452360,6456120,6460297,6475007,6484690,6503507,6552710,6586955,6586967,6586968,6587820,6614952,6614953,6669010,6673483,6673750,6696363,6777527,6777550,6784955,6826407,6855611,6855985,6856084,6863626,6864388,6869793,6870034,6870640,6871226,6881961,6906350,6926001,6970292,6991616,7021439,7023588,7054251,7058735,7058834,7067801,7072411,7082950,7082965,7083263,7083651,7083792,7083890,7084283,7097779,7111168,7115022,7117979,7134225,7147412,7151220,7154157,7155466,7177538,7252538,7253505,7278894,7326607,7346947,7347094,7352490,7356107,7356285,7367255,7367262,7377988,7449052,7450800,7451664,7522284,7524102,7533200,7541366,7561196,7564804,7565632,7580108,7581371,7595685,7611010,7630226,7653280,7656007,7667486,7684956,7705176,7714940,7773971,7776355,7803560,7814466,7842188,7882399,7900433,7903628,7906368,7950405,7959486,7960931,8004525,8015603,8037761,8057769,8091351,8092663,8092868,8092874,8119672,8120364,8126372,8168974,8182803,8208391,8251638,8256244,8259024,8273886,8300279,8303851,8316693,8333450,8364794,8365731,8376084,8381504,8381891,8382362,8412362,8421122,8513922,8522261,8540552,8595927,8596093,8602290,8643346,8731153,8737149,8737216,8738653,8747435,8753935,8767062,8809547,8881290,8897086,8897621,8907031,8922235,8922303,8922505,8936926,8951299,8966259,8968224,8971549,8974920,8975494,8977664,8980111,8983582,8984373,8991666,9001984,9054736,9055245,9094843,9096843,9142478,9173886,9174878,9198593,9206067,9206867,9237823,9247271,9271066,9286209,9291231,9305025,9311368,9338123,9355675,9399215,9405472,9406635,9407773,9413864,9435550,9442818,9442834,9442852,9442853,9443067,9443141,9443452,9457520,9457737,9465602,9470667,9498733,9499605,9516114,9516525,9540976,9546522,9583614,9591374,9626968,9632287,9632289,9632774,9659463,9660901,9666351,9684274,9684582,9695284,9699646,9714700,9718103,9718221,9766924,9767041,9770126,9799531,9800096,9800100,9800116,9868182,9888936,9889241,9895761,9930387,9935172,9935887,9948802,9961272,10021030,10030645,10032063,10040270,10040306,10046161,10048447,10048759,10055804,10059878,10095496,10132673,10144068,10150662,10156198,10178090,10179388,10203499,10229083,10264007,10264054,10271704,10296052,10296240,10297067,10320637,10354191,10354203,10354206,10354451,10364213,10376545,10422127,10423260,10440470,10454197,10455227,10482984,10485018,10485392,10490189,10498167,10498423,10531399,10531468,10531585,10532009,10534184,10535178,10540164,10572358,10572710,10573333,10586804,10590288,10634247,10640807,10691649,10697554,10725168,10735837,10736482,10736603,10736755,10737282,10737641,10738323,10741163,10753408,10754856,10895065,10895666,10898601,10900136,10916143,10920233,10922197,10922567,10923559,10925148,10928258,10967452,11013410,11014351,11014778,11064489,11140757,11143348,11185066,11186196,11187900,11188765,11188766,11189041,11189481,11190420,11191262,11191387,11193052,11211657,11218280,11234089,11244400,11245654,11278354,11278357,11317080,11331139,11339936,11405985,11409106,11499160,11509187,11538915,11540757,11546329,11640298,11668374,11673426,11673491,11674475,11683292,11683569,11683794,11685479,11691043,11692394,11694012,11694774,11695314,11700017,11701765,11701807,11701909,11707332,11708067,11730979,11733863,11740456,11746889,11751754,11752975,11754297,11756591,11757568,11757708,11757810,11766301,11771411,11774047,11774140,11774150,11774154,11774175,11774186,11774199,11774247,11774360,11774366,11774383,11774444,11774495,11774572,11774595,11774602,11774633,11774648,11774760,11774807,11774840,11777226,11777492,11778389,11778408,11778479,11778638,11779118,11781929,11794672,11795207,11795746,11796303,11796314,11796350,11796361,11796373,11796377,11796379,11796394,11798585,11798637,11798668,11798747,11798839,11798946,11799050,11799052,11800097,11800155,11800168,11800171,11800175,11800180,11800196,11800215,11800245,11800247,11800257,11800267,11800280,11800316,11800371,11800439,11800446,11800539,11800594,11800601,11831592,11840272,11840319,11840623,11840908,11841523,11883576,11884843,11893278,11899162,11901148,11901275,11903581,11921391,11922978,11931978,11940229,11950891,11951263,11964176,11966555,11968053,11968250,11972093,11972115,11972116,11972117,11972119,11972120,11972121,11972122,11972123,11972124,11972126,11972127,11994381,11994426,11994427,11994598,11995446,12022103,12042157,12042296,12044485,12044775,12083435,12087002,12087140,12112690,12126228,12126716,12126846,12127186,12127886,12128495,12130501,12188064,12205675,12226715,12251814,12253062,12253953,12257349,12257401,12263994,12277871,12296982,12324373,12370406,12370765,12374507,12374575,12374978,12375006,12375116,12375198,12375199,12375406,12375437,12375491,12375518,12375558,12375559,12375641,12375646,12375714,12375733,12375797,12376150,12376151,12376162,12376204,12376231,12376235,12376258,12376261,12376338,12376438,12376558,12376565,12376844,12376845,12376846,12377296,12377334,12377420,12377613,12378552,12378554,12378638,12378700,12379707,12379733,12380032,12380072,12380073,12380074,12380365,12380567,12380773,12380848,12381471,12381546,12381547,12381548,12382245,12382728,12382740,12382742,12383112,12383172,12384093,12384153,12384247,12384271,12384272,12384293,12384427,12384428,12384591,12385178,12385255,12385596,12385764,12385765,12385766,12385767,12385770,12385771,12385774,12386162,12386294,12386316,12386422,12386430,12386436,12386461,12386533,12386562,12386841,12386853,12387270,12387274,12387439,12387516,12388125,12388323,12388373,12388374,12388807,12389645,12389656,12389663,12395423,12397703,12398090,12398219,12402546,12414063,12414462,12415206,12416374,12417761,12418052,12420549,12420708,12421164,12421315,12422677,12425161,12425325,12425442,12425473,12425514,12425540,12425842,12426223,12426353,12426730,12427559,12427625,12427872,12428071,12428154,12428795,12428797,12429273,12429331,12431076,12435335,12439212,12444261,12451074,12451726,12455154,12455158,12468609,12468789,12469082,12469119,12469160,12469165,12469241,12469265,12469567,12469575,12469593,12469594,12469923,12470072,12470224,12470357,12470419,12471039,12471045,12471054,12471613,12471747,12472165,12472173,12472613,12486535,12498669,12498670,12499102,12506776,12508414,12513737,12526636,12538741,12538812,12539140,12545389,12557215,12557411,12558958,12563083,12569463,12572504,12573070,12580058,12582264,12584389,12589633,12589710,12607503,12609575,12611886,12614838,12622140,12625508,12630013,12632691,12636760,12637020,12642059,12642416,12645204,12648027,12648598,12649124,12649601,12650505,12651796,12652507,12652508,12652976,12653179,12656041,12658000,12658004,12679522,12694541,12701570,12711315,12719468,12723146,12726747,12731372,12731610,12736304,12754503,12780900,12784611,12794752,12795782,12795868,12799685,12801000,12857659,12861358,12881932,12883554,12883844,12883849,12898983,12910802,12916490,12917556,12921992,12925945,12926305,12928728,12929015,12929020,12929814,12932447,12932769,12941997,12946297,12987490,13008604,13013376,13024504,13028238,13028991,13060981,13066128,13075081,13077740,13083474,13103931,13124288,13125613,13125614,13125615,13164257,13164538,13175433,13179051,13180039,13184981,13188405,13190090,13198309,13224463,13236960,13236961,13249127,13251562,13255404,13259261,13268601,13290839,13291351,13301031,13309661,13309662,13309749,13309765,13311172,13311582,13315655,13320743,13322071,13328571,13339088,13346347,13347368,13347370,13348896,13350102,13351959,13352772,13353296,13353417,13353447,13353448,13353455,13353536,13353594,13353827,13353866,13353961,13353962,13355659,13355791,13357654,13360214,13363061,13364160,13364162,13364163,13364437,13364479,13381439,13381590,13382130,13382603,13391716,13412768,13414505,13426194,13430465,13433346,13433347,13433348,13434639,13442670,13456346,13459672,13464997,13465615,13489898,13495490,13495582,13500224,13510155,13520303,13520357,13520546,13521689,13523280,13523616,13537319,13538850,13538937,13538955,13539007,13539193,13539196,13539210,13539268,13540129,13540363,13544676,13547427,13609758,13609797,13609812,13609818,13618430,13628560,13636283,13682455,13690673,13690674,13690774,13691802,13693410,13697331,13701910,13702269,13702730,13705630,13718207,13720911,13736187,13739985,13751201,13753108,13768686,13775983,13778319,13778674,13780778,13789899,13799810,13801997,13802199,13802246,13802269,13804058,13811632,13812062,13816589,13842032,13843461,13847015,13849865,13865263,13866243,13866969,13878758,13880389,13884007,13884072,13884088,13884095,13884183,13884302,13884332,13884387,13884445,13884454,13884519,13884603,13884630,13884642,13884656,13884663,13884673,13884692,13884710,13884752,13884758,13884792,13884832,13884917,13884931,13884969,13884988,13885007,13885085,13885094,13885124,13885130,13885157,13885183,13885185,13885193,13885206,13885212,13885235,13885268,13885324,13885343,13885347,13885392,13885406,13885415,13885416,13885425,13885439,13885444,13885468,13885472,13885540,13885545,13885568,13885577,13885588,13885600,13885690,13885742,13885759,13885775,13885795,13885828,13885847,13885891,13885936,13885939,13885961,13885966,13885975,13885994,13885998,13886006,13886007,13886021,13886043,13886068,13886070,13886080,13886117,13886126,13886128,13886139,13886231,13886254,13886255,13886331,13886349,13886356,13886363,13886373,13886402,13886472,13886505,13886516,13886522,13886531,13886569,13886581,13886629,13886642,13886645,13886647"><font color="black">JSON</font></a></li> </ul><div style="text-align: center;" class="paginator" id="paginator_example_top"></div><script type="text/javascript">paginator_example_top = new Paginator("paginator_example_top", 80, 25, 1, "/index.php?req=rust&curtab=f&order=&ordermode=desc&filesuns=all&page=" );</script><table class="table  table-striped" id="tablelibgen"><thead><tr>
+
+<th scope="col" class="first_col"><nobr>
+ID <a href="/index.php?req=rust&curtab=f&order=f_id&ordermode=asc">&#8597</a> 
+Time add. <a href="/index.php?req=rust&curtab=f&order=time_added&ordermode=asc">&#8597</a> 
+Title <a href="/index.php?req=rust&curtab=f&order=title&ordermode=asc">&#8597</a> 
+Series <a href="/index.php?req=rust&curtab=f&order=series&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Author(s) <a href="/index.php?req=rust&curtab=f&order=author&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Publisher <a href="/index.php?req=rust&curtab=f&order=publisher&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Year <a href="/index.php?req=rust&curtab=f&order=year&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col">Language</th>
+<th scope="col">Pages</th>
+<th scope="col"><nobr>Size  <a href="/index.php?req=rust&curtab=f&order=filesize&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Ext. <a href="/index.php?req=rust&curtab=f&order=extension&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col">Mirrors</th>
+</tr></thead><tbody><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-02-22/2021-02-27; ID: 93911351<br>The Rust Programming Language" href="edition.php?id=138721337">The Rust Programming Language <i>1</i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 2943879</span></nobr>
+
+</td>
+<td>The Rust Project Developpers</td>
+<td>The Rust Project Developpers</td>
+<td><nobr>2017</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=93911351">277 kB</a></nobr></td>
+<td>epub</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/7a7ef891b9d2b2ae8d9cd864556f7cd8"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/7a7ef891b9d2b2ae8d9cd864556f7cd8?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/7a7ef891b9d2b2ae8d9cd864556f7cd8"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/7a7ef891b9d2b2ae8d9cd864556f7cd8"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-02-22/2021-02-27; ID: 93911352<br>The Rust Programming Language" href="edition.php?id=138721338">The Rust Programming Language <i>1</i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 2943880</span></nobr>
+
+</td>
+<td>The Rust Project Developpers</td>
+<td>The Rust Project Developpers</td>
+<td><nobr>2017</nobr></td>
+<td>English</td>
+<td>411</td>
+<td><nobr><a href="/file.php?id=93911352">1 MB</a></nobr></td>
+<td>pdf</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=53a2781537e382ad99a4d250df99d1f5"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/53a2781537e382ad99a4d250df99d1f5"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/53a2781537e382ad99a4d250df99d1f5?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/53a2781537e382ad99a4d250df99d1f5"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/53a2781537e382ad99a4d250df99d1f5"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2022-03-08/2022-03-08; ID: 97505425<br>The Rust Programming Language (Covers Rust 2018) by Steve Klabnik, Carol Nichols" href="edition.php?id=141474133">The Rust Programming Language <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2022-03-08/2022-03-08; ID: 97505425<br>The Rust Programming Language (Covers Rust 2018) by Steve Klabnik, Carol Nichols" href="edition.php?id=141474133"><i><font color="green"> 9781718500457; 1718500459; 9781098122539; 1098122534</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 3359259</span></nobr>
+
+</td>
+<td>Rust Community;Klabnik, Steve;Nichols, Carol</td>
+<td>Covers Rust; No Starch Press</td>
+<td><nobr>2019</nobr></td>
+<td>English</td>
+<td>0 / 562 pages</td>
+<td><nobr><a href="/file.php?id=97505425">19 kB</a></nobr></td>
+<td>doc</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=1b9159991f7fb1b3910c0be9ebf7e595"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/1b9159991f7fb1b3910c0be9ebf7e595"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/1b9159991f7fb1b3910c0be9ebf7e595?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/1b9159991f7fb1b3910c0be9ebf7e595"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/1b9159991f7fb1b3910c0be9ebf7e595"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2022-11-27/2022-11-29; ID: 98253581<br>black_hat_rust" href="edition.php?id=142732861">Black Hat Rust: Applied offensive security with the Rust programming language <i>v2022.56</i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 3702759</span></nobr>
+
+</td>
+<td>Sylvain Kerkour</td>
+<td>https://kerkour.com/black-hat-rust</td>
+<td><nobr>2022</nobr></td>
+<td>English</td>
+<td>441 / 439</td>
+<td><nobr><a href="/file.php?id=98253581">2 MB</a></nobr></td>
+<td>pdf</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=7a117c997373c312c3d1ce81c3534937"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/7a117c997373c312c3d1ce81c3534937"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/7a117c997373c312c3d1ce81c3534937?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/7a117c997373c312c3d1ce81c3534937"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/7a117c997373c312c3d1ce81c3534937"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2022-11-27/2022-11-29; ID: 98253590<br>black_hat_rust" href="edition.php?id=142732870">Black Hat Rust: Applied offensive security with the Rust programming language <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 3702768</span></nobr>
+
+</td>
+<td>Sylvain Kerkour</td>
+<td>https://kerkour.com/black-hat-rust</td>
+<td><nobr>2022</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=98253590">2 MB</a></nobr></td>
+<td>epub</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=d2ae97e866313b40ffc448652b09bc8f"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/d2ae97e866313b40ffc448652b09bc8f"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/d2ae97e866313b40ffc448652b09bc8f?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/d2ae97e866313b40ffc448652b09bc8f"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/d2ae97e866313b40ffc448652b09bc8f"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2022-11-27/2022-11-29; ID: 98253597<br>black_hat_rust" href="edition.php?id=142732877">Black Hat Rust: Applied offensive security with the Rust programming language <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 3702775</span></nobr>
+
+</td>
+<td>Sylvain Kerkour</td>
+<td>https://kerkour.com/black-hat-rust</td>
+<td><nobr>2022</nobr></td>
+<td>English</td>
+<td>0 / 439</td>
+<td><nobr><a href="/file.php?id=98253597">522 kB</a></nobr></td>
+<td>mobi</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=077825de16e02cbd60bf1c7fc1a6c5ae"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/077825de16e02cbd60bf1c7fc1a6c5ae"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/077825de16e02cbd60bf1c7fc1a6c5ae?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/077825de16e02cbd60bf1c7fc1a6c5ae"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/077825de16e02cbd60bf1c7fc1a6c5ae"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2022-11-27/2022-11-29; ID: 98253633<br>black_hat_rust" href="edition.php?id=142732913">Black Hat Rust: Applied offensive security with the Rust programming language <i>v2022.56</i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 3702811</span></nobr>
+
+</td>
+<td>Sylvain Kerkour</td>
+<td>https://kerkour.com/black-hat-rust</td>
+<td><nobr>2022</nobr></td>
+<td>English</td>
+<td>0 / 439</td>
+<td><nobr><a href="/file.php?id=98253633">3 MB</a></nobr></td>
+<td>azw3</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=6ebc549c9497e96bcfd70207616816f1"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/6ebc549c9497e96bcfd70207616816f1"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/6ebc549c9497e96bcfd70207616816f1?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/6ebc549c9497e96bcfd70207616816f1"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/6ebc549c9497e96bcfd70207616816f1"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><b><a href="series.php?id=32748">Advances in Crop Science and Technology   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-12-25/2021-07-21; ID: 83253696<br>" href="edition.php?id=83634387"><i> vol. 03 iss. 02</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-12-25/2021-07-21; ID: 83253696<br>" href="edition.php?id=83634387">Survey of Rust and Septoria Leaf Blotch Diseases of Wheat in Central Ethiopia and Virulence Diversity of Stem Rust Puccinia graminis f. sp. tritici <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-12-25/2021-07-21; ID: 83253696<br>" href="edition.php?id=83634387"><i><font color="green">DOI: 10.4172/2329-8863.1000166</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 77385991</span></nobr>
+
+</td>
+<td>Septoria Leaf, Survey of Rust</td>
+<td></td>
+<td><nobr>2015</nobr></td>
+<td></td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=83253696">713 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=6a8d774373d841f9dd13b77d4f71000e&downloadname=10.4172/2329-8863.1000166"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.4172/2329-8863.1000166"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/6a8d774373d841f9dd13b77d4f71000e"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/6a8d774373d841f9dd13b77d4f71000e"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/6a8d774373d841f9dd13b77d4f71000e?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/6a8d774373d841f9dd13b77d4f71000e"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2022-01-28/2022-01-29; ID: 96713462<br>black_hat_rust" href="edition.php?id=140696109">Black Hat Rust: Applied offensive security with the Rust programming language <i>v2021.46</i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 3275438</span></nobr>
+
+</td>
+<td>Sylvain Kerkour</td>
+<td>https://kerkour.com/black-hat-rust/</td>
+<td><nobr>2021</nobr></td>
+<td>English</td>
+<td>357 / 355</td>
+<td><nobr><a href="/file.php?id=96713462">4 MB</a></nobr></td>
+<td>pdf</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=be7af8a42588d955b424714099701b17"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/be7af8a42588d955b424714099701b17"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/be7af8a42588d955b424714099701b17?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/be7af8a42588d955b424714099701b17"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/be7af8a42588d955b424714099701b17"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><b><a href="series.php?id=139801">Rust   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-14/2022-08-21; ID: 19765<br>Rust 01 (1987) (Now) (HaCsA)" href="edition.php?id=142494603"><i> #1</i></a></b> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 1132452</span></nobr>
+<font size=1 color="gray"><br>Rust 01 (1987) (Now) (HaCsA) <br><b>1200x1852px 200dpi</b></font>
+</td>
+<td></td>
+<td><a href="publisher.php?id=42632">Now Comics</a></td>
+<td><nobr>1987</nobr></td>
+<td>English</td>
+<td>28</td>
+<td><nobr><a href="/file.php?id=19765">12 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=3b3c4e61800c5936cadbf274e95b8376"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/3b3c4e61800c5936cadbf274e95b8376?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=139803">Rust  2 </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-17/2022-08-21; ID: 42175<br>Rust vol 02 (2012) (digital-Empire)" href="edition.php?id=215466"><i> #2 2012-dec</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-17/2022-08-21; ID: 42175<br>Rust vol 02 (2012) (digital-Empire)" href="edition.php?id=215466">Secrets of the Cell <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 1132448</span></nobr>
+<font size=1 color="gray"><br>Rust vol 02 (2012) (digital-Empire) <br><b>1280x1920px 72dpi</b></font>
+</td>
+<td>Royden Lepp (artist, cover, writer)</td>
+<td><a href="publisher.php?id=2243">Archaia Entertainment</a></td>
+<td><nobr>2012 December</nobr></td>
+<td>English</td>
+<td>192</td>
+<td><nobr><a href="/file.php?id=42175">113 MB</a></nobr></td>
+<td>cbz</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=e2362a408914c91759b8cdc52dbc27dc"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/e2362a408914c91759b8cdc52dbc27dc?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=336607">Flippie Flink  1 </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 114217<br>Flippie Flink - B01 - Deel 1, Op de plaats, rust!" href="edition.php?id=142386482"><i> #1</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 114217<br>Flippie Flink - B01 - Deel 1, Op de plaats, rust!" href="edition.php?id=142386482">Op De Plaats, Rust! <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 955676</span></nobr>
+<font size=1 color="gray"><br>Flippie Flink - B01 - Deel 1, Op de plaats, rust! <br><b>1647x2173px 200dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>49</td>
+<td><nobr><a href="/file.php?id=114217">39 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=204bf3b5e4784b39e8fbbd652bdb205d"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/204bf3b5e4784b39e8fbbd652bdb205d?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=338279">Opa   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 118480<br>Opa - 01 - Herrie in Huize Roest Rust" href="edition.php?id=142394415"><i> #1</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 118480<br>Opa - 01 - Herrie in Huize Roest Rust" href="edition.php?id=142394415">Herrie In Huize Roest Rust <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 965137</span></nobr>
+<font size=1 color="gray"><br>Opa - 01 - Herrie in Huize Roest Rust <br><b>1457x2087px 200dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>53</td>
+<td><nobr><a href="/file.php?id=118480">37 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=c51404964539120fee17e4c48fb473f1"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/c51404964539120fee17e4c48fb473f1?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=338279">Opa   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 118481<br>Opa - 02 - Beestenbende op Huize Roest Rust" href="edition.php?id=142394416"><i> #2</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 118481<br>Opa - 02 - Beestenbende op Huize Roest Rust" href="edition.php?id=142394416">Beestenbende Op Huize Roest Rust <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 965138</span></nobr>
+<font size=1 color="gray"><br>Opa - 02 - Beestenbende op Huize Roest Rust <br><b>1496x2087px 200dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>52</td>
+<td><nobr><a href="/file.php?id=118481">31 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=0d1d724e6520cf91a01097f5ffef7df5"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/0d1d724e6520cf91a01097f5ffef7df5?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=338279">Opa   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 118482<br>Opa - 04 - Op de vuist in Huize Roest Rust" href="edition.php?id=142394417"><i> #4</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-23/2022-08-21; ID: 118482<br>Opa - 04 - Op de vuist in Huize Roest Rust" href="edition.php?id=142394417">Op De Vuist In Huize Roest Rust <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 965139</span></nobr>
+<font size=1 color="gray"><br>Opa - 04 - Op de vuist in Huize Roest Rust <br><b>1535x2126px 200dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>52</td>
+<td><nobr><a href="/file.php?id=118482">35 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=1ce76ab12848b91a2de4d6c0fa2fbbbf"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/1ce76ab12848b91a2de4d6c0fa2fbbbf?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=336683">Garfield   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-30/2022-08-21; ID: 296760<br>Garfield 090-Rust Even Uit [Dutch]" href="edition.php?id=142386759"><i> #90</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-30/2022-08-21; ID: 296760<br>Garfield 090-Rust Even Uit [Dutch]" href="edition.php?id=142386759">Rust Even Uit <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 956000</span></nobr>
+<font size=1 color="gray"><br>Garfield 090-Rust Even Uit [Dutch] <br><b>1384x1922px 72dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>34</td>
+<td><nobr><a href="/file.php?id=296760">18 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=6ae9edd8084d8c0d2b3a1167d54d3581"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/6ae9edd8084d8c0d2b3a1167d54d3581?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=336609">Flippie Flink  B </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-08-01/2022-08-21; ID: 340032<br>Flippie Flink B01-Op De Plaats, Rust [Dutch]" href="edition.php?id=142386489"><i> #1</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-08-01/2022-08-21; ID: 340032<br>Flippie Flink B01-Op De Plaats, Rust [Dutch]" href="edition.php?id=142386489">Op De Plaats, Rust <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 955681</span></nobr>
+<font size=1 color="gray"><br>Flippie Flink B01-Op De Plaats, Rust [Dutch] <br><b>2513x3357px 300dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>40</td>
+<td><nobr><a href="/file.php?id=340032">15 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=f760f985c38ed324ef848ee8a8769955"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/f760f985c38ed324ef848ee8a8769955?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=347585">Chinaman   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-08-02/2022-10-29; ID: 359515<br>Chinaman 04 - The Rust Munchers (Dragonz-K)" href="edition.php?id=142429338"><i> #4</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-08-02/2022-10-29; ID: 359515<br>Chinaman 04 - The Rust Munchers (Dragonz-K)" href="edition.php?id=142429338">The Rust Munchers <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 1027391</span></nobr>
+<font size=1 color="gray"><br>Chinaman 04 - The Rust Munchers (Dragonz-K) <br><b> </b></font>
+</td>
+<td>Dragonz-K</td>
+<td><a href="publisher.php?id=5450">Casterman</a></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=359515">16 MB</a></nobr></td>
+<td>cbz</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=67a823f90fa5b095de84a7f446cf8797"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/67a823f90fa5b095de84a7f446cf8797?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=335709">Batman: Classics   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-02-29/2022-08-21; ID: 451945<br>Batman (Classics) - 035 - Rust In Vrede, Bruce Wayne" href="edition.php?id=142379345"><i> #35</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-02-29/2022-08-21; ID: 451945<br>Batman (Classics) - 035 - Rust In Vrede, Bruce Wayne" href="edition.php?id=142379345">Rust In Vrede, Bruce Wayne <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 947140</span></nobr>
+<font size=1 color="gray"><br>Batman (Classics) - 035 - Rust In Vrede, Bruce Wayne <br><b>1285x1911px 200dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>36</td>
+<td><nobr><a href="/file.php?id=451945">41 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=ac3c4a4004359d679c6ef20e9c83bae5"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/ac3c4a4004359d679c6ef20e9c83bae5?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=347585">Chinaman   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-02-20/2022-08-21; ID: 792275<br>Chinaman 04 - The Rust Munchers" href="edition.php?id=142429338"><i> #4</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-02-20/2022-08-21; ID: 792275<br>Chinaman 04 - The Rust Munchers" href="edition.php?id=142429338">The Rust Munchers <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 1027389</span></nobr>
+<font size=1 color="gray"><br>Chinaman 04 - The Rust Munchers <br><b>1000x1350px 72dpi</b></font>
+</td>
+<td>Dragonz-K</td>
+<td><a href="publisher.php?id=5450">Casterman</a></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>49</td>
+<td><nobr><a href="/file.php?id=792275">16 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=02dedc90b9da5ab5e827838db6f9c0c2"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/02dedc90b9da5ab5e827838db6f9c0c2?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=366607">Rust TPB  </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-06-20/2022-08-21; ID: 948189<br>Rust v02 - Secrets of the Cell (2017) (digital) (The Magicians-Empire)" href="edition.php?id=142494601"><i> #2</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-06-20/2022-08-21; ID: 948189<br>Rust v02 - Secrets of the Cell (2017) (digital) (The Magicians-Empire)" href="edition.php?id=142494601">Secrets of the Cell <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 1132449</span></nobr>
+<font size=1 color="gray"><br>Rust v02 - Secrets of the Cell (2017) (digital) (The Magicians-Empire) <br><b>2037x3056px 72dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr>2017</nobr></td>
+<td>English</td>
+<td>177</td>
+<td><nobr><a href="/file.php?id=948189">177 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=bf4a4f6bdfb863b8a895236c27d65bd3"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/bf4a4f6bdfb863b8a895236c27d65bd3?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=366607">Rust TPB  </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-06-20/2022-08-21; ID: 948190<br>Rust v03 - Death of the Rocket Boy (2017) (digital) (The Magicians-Empire)" href="edition.php?id=142494602"><i> #3</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-06-20/2022-08-21; ID: 948190<br>Rust v03 - Death of the Rocket Boy (2017) (digital) (The Magicians-Empire)" href="edition.php?id=142494602">Death of the Rocket Boy <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 1132450</span></nobr>
+<font size=1 color="gray"><br>Rust v03 - Death of the Rocket Boy (2017) (digital) (The Magicians-Empire) <br><b>1800x2700px 72dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr>2017</nobr></td>
+<td>English</td>
+<td>192</td>
+<td><nobr><a href="/file.php?id=948190">357 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=55a1e192bafde0a306a828b84e5a863c"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/55a1e192bafde0a306a828b84e5a863c?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=366607">Rust TPB  </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-07-01/2022-08-21; ID: 949732<br>Rust v03 - Death of the Rocket Boy (2017) (digital) (The Magicians-Empire)" href="edition.php?id=142494602"><i> #3</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-07-01/2022-08-21; ID: 949732<br>Rust v03 - Death of the Rocket Boy (2017) (digital) (The Magicians-Empire)" href="edition.php?id=142494602">Death of the Rocket Boy <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 1132451</span></nobr>
+<font size=1 color="gray"><br>Rust v03 - Death of the Rocket Boy (2017) (digital) (The Magicians-Empire) <br><b>1800x2700px 72dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr>2017</nobr></td>
+<td>English</td>
+<td>41</td>
+<td><nobr><a href="/file.php?id=949732">92 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=d2b774cbd30c4189adbd75dba7e6df5a"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/d2b774cbd30c4189adbd75dba7e6df5a?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=338053">Mooie Zomers   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-09-07/2022-08-21; ID: 1145195<br>Mooie Zomers - 04 - Krijger Op Rust" href="edition.php?id=142393535"><i> #4</i></a></b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-09-07/2022-08-21; ID: 1145195<br>Mooie Zomers - 04 - Krijger Op Rust" href="edition.php?id=142393535">Krijger Op Rust <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 964188</span></nobr>
+<font size=1 color="gray"><br>Mooie Zomers - 04 - Krijger Op Rust <br><b>1920x2533px 250dpi</b></font>
+</td>
+<td></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>Dutch</td>
+<td>57</td>
+<td><nobr><a href="/file.php?id=1145195">57 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=63c23b182ae819435647d730e857ecd7"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/63c23b182ae819435647d730e857ecd7?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=103505">Rust  1 </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-07-13/2021-06-18; ID: 1259183<br>Rust 001 (1992) of4" href="edition.php?id=8388"><i> #1</i></a></b> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Comics issue">c</a></span> 
+<span class="badge badge-secondary"">c 45534</span></nobr>
+<font size=1 color="gray"><br>Rust 001 (1992) of4 <br><b>1000x1542px 200dpi</b></font>
+</td>
+<td></td>
+<td><a href="publisher.php?id=40122">Adventure Comics</a>; <a href="publisher.php?id=17592">Malibu Graphics</a></td>
+<td><nobr>1992</nobr></td>
+<td>English</td>
+<td>36</td>
+<td><nobr><a href="/file.php?id=1259183">14 MB</a></nobr></td>
+<td>cbr</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/get.php?md5=e02b20e4b064121a7516435600aa3519"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/e02b20e4b064121a7516435600aa3519?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> </td>
+</tr></tbody></table><table>
+  <tr>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+  </tr> 
+  <tr>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+  </tr> 
+  <tr>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+  </tr> 
+</table><div style="text-align: center;" class="paginator" id="paginator_example_bottom"></div><script type="text/javascript">paginator_example_bottom = new Paginator("paginator_example_bottom", 80, 25, 1, "/index.php?req=rust&curtab=f&order=&ordermode=desc&filesuns=all&page=" );</script><div class="modal fade text-dark" id="googlemodemodal" tabindex="-1" aria-labelledby="googlemodemodalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="googlemodemodalLabel">Google mode</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        
+By default, the search searches for a set of marked fields containing all the words specified in the query in no particular order<br>
+Advanced search mode (Google mode), allows you to set more precise search terms:<br>
+- Quotes: "" - search exactly for the phrase as it is written in the database<br>
+- Mask: * (min 3 chars)- search by part of a word<br>
+- Excluding words: - (minus) - does not display records containing this word, also, these conditions can be combined.<br>
+Example:<br>
+"Physics and Chemistry" Basi * -technology<br>
+means the title of the book contains the exact phrase "Physics and Chemistry", contains the word starting with Basi and does not contain the word technology.<br>
+You can also search for a specific field or view mode that is not displayed for selection in the interface, syntax: field_name:value<br>
+List of add. fields:<br>
+For the Files tab:<br>
+<i>md5</i><br>
+<i>tth</i><br>
+<i>sha1</i><br>
+<i>sha256</i><br>
+<i>crc32</i><br>
+<i>edonkey</i><br>
+<i>doi</i><br>
+
+View modes:<br>
+<i>mode:last</i> - last added entries (for a given object - series, authors, editions, etc.)<br>
+<br>
+<i>fmode:last</i> - last added files (for the given repository)<br>
+<br>
+Add. fields for object "editions" and "files":<br>
+<i>issuevolume</i> - periodical volume<br>
+<i>issuesid</i> - serial ID of the periodical<br>
+<i>issuenumber</i> - the number (within the volume) of the periodical<br>
+<i>issuetnumber</i> is the gross number of the periodical<br>
+<i>issueynumber</i> - intra-annual issue of the periodical<br>
+<i>year</i> - year<br>
+<i>publisherid</i> - Publisher ID<br>
+<i>authorid</i> - Author's ID<br>
+<i>lang</i> - three-letter language code (ISO 639)<br>
+<i>fsize</i> - filesize (MBytes), for example: fsize&gt;10, fsize&lt;20, fsize=15<br>
+<i>ext</i> - File extenstion <br>
+<i>booktopicid</i> - ID of the classifier for books<br>
+<i>tags</i> - Теги (издание, работы, серия)<br>
+<br>
+Add. fields for object "series"<br>
+<i>comtopicid</i> - ID of the classifier for comics<br>
+<i>smtopicid</i> - ID of the classifier for scientific journals<br>
+<i>magtopicid</i> - ID of the classifier for magazines<br>
+<i>issn</i> - ISSN
+
+      </div>
+    </div>
+  </div>
+</div><nav class="navbar sticky-bottom navbar-expand-sm navbar-dark bg-secondary">
+  <div class="collapse navbar-collapse" id="navbarCollapse">
+    <ul class="navbar-nav mr-auto">
+      <li class="nav-item">
+	    <a class="nav-link" href="#" data-toggle="modal" data-target="#dmcamodal">DMCA</a>
+      </li>
+      <li class="nav-item">
+	    <a class="nav-link" href="#" data-toggle="modal" data-target="#aboutmodal">ABOUT</a>
+      </li>
+      <li class="nav-item">
+	    <a class="nav-link" href="#" data-toggle="modal" data-target="#donatemodal" >DONATE</a>
+      </li>
+	
+    </ul>
+	<span class="navbar-text">Users online 27910</span>
+  </div>
+</nav>
+
+<!-- Modal Donate -->
+<div class="modal fade text-dark" id="donatemodal" tabindex="-1" aria-labelledby="donatemodalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="donatemodalLabel">Donate</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <a href="bitcoin://bc1qlv9lwa5vncm2jjrxyhddfcvu0z3u5vn0s9672r">Bitcoin</a>
+	<br>
+        <a href="monero:48WhyKv4D9x53SyDFNYuMsHsDzuHXEcht4mWoFtXtE3k4KZ3A7goi3CQWBQQZ3A8PSK7CpwnAFKLnfGiZTAbEpcaCQCghvN">Monero</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal About -->
+<div class="modal fade text-dark" id="aboutmodal" tabindex="-1" aria-labelledby="aboutmodalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="aboutmodalLabel">About</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+
+
+<div id="about">
+The Library Genesis aggregator is a community aiming at collecting and cataloging items descriptions for the most part of scientific, 
+scientific and technical directions, as well as file metadata. In addition to the descriptions, 
+the aggregator contains only links to third-party resources hosted by users. 
+All information posted on the website is collected from publicly available public Internet resources and is intended solely for informational purposes.  
+</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal DMCA -->
+<div class="modal fade text-dark" id="dmcamodal" tabindex="-1" aria-labelledby="dmcamodalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dmcamodalLabel">About</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+
+<div id="dmca">
+Library Genesis - aggregator items is a website that collects and organizes online items from users. 
+Item aggregation is done for fact-finding purposes, and website Library Genesis respects the rights of copyright holders and respect dcma.
+
+     Removing Content From Library Genesis / DMCA Policy
+     Library Genesis respects the intellectual property of others.
+</div>
+
+    <div class="dmca">
+     If you believe that your copyrighted work has been copied in a way that constitutes copyright infringement and is accessible on this site, you may notify our copyright agent, as set forth in the Digital Millennium Copyright Act of 1998 (DMCA). For your complaint to be valid under the DMCA, you must provide the following information when providing notice of the claimed copyright infringement:
+</div>
+    <div class="dmca">
+     * A physical or electronic signature of a person authorized to act on behalf of the copyright owner Identification of the copyrighted work claimed to have been infringed <br />
+     * Identification of the material that is claimed to be infringing or to be the subject of the infringing activity and that is to be removed <br />
+     * Information reasonably sufficient to permit the service provider to contact the complaining party, such as an address, telephone number, and, if available, an electronic mail address <br />
+     * A statement that the complaining party "in good faith believes that use of the material in the manner complained of is not authorized by the copyright owner, its agent, or law" <br />
+     * A statement that the "information in the notification is accurate", and "under penalty of perjury, the complaining party is authorized to act on behalf of the owner of an exclusive right that is allegedly infringed" <br />
+     The above information must be submitted as a written, faxed or emailed notification to the following Designated Agent: ianzlib@protonmail.com. Appeals will be reviewed within 72 hours.</div>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+	<script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.5/dist/popper.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" integrity="sha384-w1Q4orYjBQndcko6MimVbzY0tgp4pWB4lZ7lr30WKz0vr/aWKhXdBNmNb5D92v7s" crossorigin="anonymous"></script>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ho+j7jyWK8fNQe+A12Hb8AhRq26LrZ/JpcUGGOn+Y7RsweNrtN/tE3MoK7ZeZDyx" crossorigin="anonymous"></script>
+	<script src="/js/form-validation.js"></script>
+	<script>
+$('[data-toggle="tooltip"]').tooltip();
+$('.btn-tooltip-bottom').tooltip({
+    placement: 'bottom'
+});
+</script>
+
+</body>
+</html>

@@ -1,7 +1,10 @@
 """Search orchestration for Nabu-V1 Link Resolver.
 
 Flow:
-search_books(query) -> search_cache -> local FTS -> (thin) -> single_flight(_scrape) -> upsert -> serve
+search_books(query) -> search_cache (verbatim repeat only) -> single_flight(_scrape) -> upsert -> serve
+
+The local catalogue is never used to answer a new query. It is only a degraded
+fallback (together with a stale cache entry) when every upstream mirror fails.
 """
 
 from __future__ import annotations
@@ -237,19 +240,8 @@ class SearchService:
                     query_normalized=qn,
                 )
 
-        # 2. Local FTS catalog check
+        # 2. Not a verbatim repeat: always go to the upstream sources for freshness.
         target_results = self.config.upstream_max_results
-        local_hits = await self.db.search_books(qn, limit=target_results)
-        if not force_upstream and len(local_hits) >= target_results:
-            ranked_local = _rank_books(local_hits, query)
-            logger.info("[search] Query %r served from local FTS (%d books)", qn, len(ranked_local))
-            return SearchOutcome(
-                hits=ranked_local,
-                source="local",
-                degraded=False,
-                total_count=len(ranked_local),
-                query_normalized=qn,
-            )
 
         # 3. Upstream SingleFlight scrape
         if user_id is not None and self.user_rate_limiter is not None:
@@ -281,19 +273,8 @@ class SearchService:
                 )
                 upstream_ids.append(bid)
 
-            # Merge upstream IDs ahead of local IDs, deduplicate, cap at upstream_max_results
-            seen: set[int] = set()
-            merged_ids: list[int] = []
-            for bid in upstream_ids:
-                if bid not in seen:
-                    seen.add(bid)
-                    merged_ids.append(bid)
-            for b in local_hits:
-                if b.id not in seen:
-                    seen.add(b.id)
-                    merged_ids.append(b.id)
-
-            final_ids = merged_ids[:target_results]
+            # Upstream results only (deduplicated, order preserved), capped at upstream_max_results
+            final_ids = list(dict.fromkeys(upstream_ids))[:target_results]
             books = await self.db.get_books_by_ids(final_ids)
             ranked_books = _rank_books(books, query)
 
@@ -327,18 +308,10 @@ class SearchService:
                 total_upstream=len(upstream_hits),
             )
 
-            source_type = "upstream"
-            has_upstream = any(b.id in upstream_ids for b in ranked_books)
-            has_local = any(b.id not in upstream_ids for b in ranked_books)
-            if has_upstream and has_local:
-                source_type = "mixed"
-            elif not has_upstream and has_local:
-                source_type = "local"
-
-            logger.info("[search] Query %r served %s (%d books)", qn, source_type, len(ranked_books))
+            logger.info("[search] Query %r served upstream (%d books)", qn, len(ranked_books))
             return SearchOutcome(
                 hits=ranked_books,
-                source=source_type,  # type: ignore[arg-type]
+                source="upstream",
                 degraded=False,
                 total_count=len(ranked_books),
                 mirror_url=mirror.url if mirror else None,
@@ -349,7 +322,7 @@ class SearchService:
 
         except Exception as exc:
             logger.warning("[search] Upstream scrape failed for %r: %s", qn, exc)
-            # Degraded fallbacks
+            # Degraded fallbacks: stale cache first, then the local catalogue
             if cached is not None:
                 stale_ids = cached[0]
                 books = await self.db.get_books_by_ids(stale_ids)
@@ -364,6 +337,7 @@ class SearchService:
                         query_normalized=qn,
                     )
 
+            local_hits = await self.db.search_books(qn, limit=target_results)
             if local_hits:
                 ranked_local = _rank_books(local_hits, query)
                 logger.info("[search] Serving local hits for %r (degraded)", qn)

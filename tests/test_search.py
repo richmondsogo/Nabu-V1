@@ -117,25 +117,26 @@ async def test_local_fts_ge_threshold_still_queries_upstream_and_merges(test_con
     )
 
     outcome = await service.search_books("Python Cookbook", user_id=1001)
-    # Upstream was still queried because local count (4) < target results (50)
+    # Upstream was queried for freshness
     assert len(upstream_calls) >= 1
-    assert outcome.source in ("upstream", "mixed")
+    assert outcome.source == "upstream"
+    assert outcome.degraded is False
     titles = [b.title for b in outcome.hits]
     assert any("Vol 99" in t for t in titles)
-    assert any("Vol 0" in t for t in titles)
+    # Unrelated local catalog items are NOT merged on fresh upstream searches
+    assert not any("Vol 0" in t for t in titles)
 
 
 @pytest.mark.asyncio
-async def test_local_fts_lt_threshold_goes_upstream_and_merges(test_config: Config):
+async def test_fresh_query_does_not_merge_unrelated_local_hits(test_config: Config):
     db = Database(test_config.db_path)
     db.init_schema()
 
-    # Pre-populate only 1 book locally (threshold is 3)
+    # Pre-populate 1 book locally
     await db.insert_book(title="Local Rust Guide", author="Local Author", md5="local_rust_01")
 
     upstream_calls = []
 
-    # Return a fixture with 2 rows so merged result includes local hit
     mock_html = """
     <table>
       <tr><th>Title</th><th>Author</th><th>Col3</th><th>Year</th><th>Lang</th><th>Col5</th><th>Size</th><th>Ext</th><th>Mirrors</th></tr>
@@ -161,12 +162,42 @@ async def test_local_fts_lt_threshold_goes_upstream_and_merges(test_config: Conf
     )
 
     outcome = await service.search_books("Rust", user_id=1001)
-    assert outcome.source in ("upstream", "mixed")
+    assert outcome.source == "upstream"
+    assert outcome.degraded is False
     assert len(upstream_calls) == 1
-    # Check that upstream hits and local hits are merged
+    # Check that fresh upstream hits are returned, without merging unrelated local catalogue hits
     titles = [b.title for b in outcome.hits]
     assert any("Programming Language" in t for t in titles)
-    assert any("Local Rust Guide" in t for t in titles)
+    assert not any("Local Rust Guide" in t for t in titles)
+
+
+@pytest.mark.asyncio
+async def test_all_mirrors_fail_with_local_catalog_serves_degraded(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    # Pre-populate a book locally (no cache)
+    await db.insert_book(title="Offline Local Rust Guide", author="Local Author", md5="offline_rust_01")
+
+    def mock_fail(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="Server Error")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_fail))
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        user_rate_limiter=UserRateLimiter(5, 0.5),
+        http_client=client,
+    )
+
+    outcome = await service.search_books("Rust", user_id=1001)
+    assert outcome.source == "local"
+    assert outcome.degraded is True
+    assert outcome.hits[0].title == "Offline Local Rust Guide"
 
 
 @pytest.mark.asyncio

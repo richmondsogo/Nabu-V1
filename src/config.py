@@ -26,7 +26,7 @@ class Config:
     db_path: Path
     # Link Resolver settings
     local_result_threshold: int = 3
-    search_cache_ttl: float = 86400.0
+    search_cache_ttl: float = 43200.0  # 12 hours
     max_upstream: int = 4
     polite_delay_ms: int = 750
     connect_timeout: float = 8.0
@@ -162,7 +162,7 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
 
     # Link Resolver config items
     local_result_threshold = _parse_int(raw_env.get("LOCAL_RESULT_THRESHOLD"), "LOCAL_RESULT_THRESHOLD", 3)
-    search_cache_ttl = _parse_float(raw_env.get("SEARCH_CACHE_TTL"), "SEARCH_CACHE_TTL", 86400.0)
+    search_cache_ttl = _parse_float(raw_env.get("SEARCH_CACHE_TTL"), "SEARCH_CACHE_TTL", 43200.0)
     max_upstream = _parse_int(raw_env.get("MAX_UPSTREAM"), "MAX_UPSTREAM", 4)
     polite_delay_ms = _parse_int(raw_env.get("POLITE_DELAY_MS"), "POLITE_DELAY_MS", 750, min_val=0)
     connect_timeout = _parse_float(raw_env.get("CONNECT_TIMEOUT"), "CONNECT_TIMEOUT", 8.0)

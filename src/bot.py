@@ -48,6 +48,10 @@ from utils import build_links, decode_callback, encode_callback, escape, format_
 
 logger = logging.getLogger(__name__)
 
+# Silence httpx and httpcore logging to prevent Telegram bot tokens and query params from leaking
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 # Registry for search query hashes used in refresh button callbacks:
 # qhash -> (raw_query, last_refreshed_at)
 _query_registry: dict[str, tuple[str, float]] = {}
@@ -93,10 +97,17 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     welcome_text = (
-        "<b>Welcome to Nabu</b>\n\n"
-        "Send any book title or author to search.\n"
-        "Tap a result to receive direct browser download links.\n\n"
+        "<b>Welcome to Nabu — Book Discovery & Link Resolver</b>\n\n"
+        "Send any book title, author, or ISBN to search.\n"
+        "Tap a book result to get a direct one-click download link.\n\n"
+        "<b>Frequently Asked Questions (FAQ):</b>\n"
+        "• <b>Why did my download link expire or fail to start?</b>\n"
+        "  Direct download keys are temporary (valid for a few minutes). "
+        "If a download link expires or fails to start, simply tap the book card again in Telegram to get a fresh link.\n"
+        "• <b>What if upstream sources are offline?</b>\n"
+        "  Nabu automatically falls back to cached and offline catalogue results, labeled as degraded.\n\n"
         "<b>Commands:</b>\n"
+        "/help, /faq — Show this usage guide and FAQ\n"
         "/status — System health & cache statistics\n"
         "/mirrors — Upstream mirror status & latencies\n"
         "/rebuild — Rebuild local search index"
@@ -196,12 +207,24 @@ async def handle_rebuild(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # Handlers: Text Search & Presentation
 # -----------------------------------------------------------------------------
 
-def _source_label(source: str, mirror_url: str | None, latency_ms: int | None) -> str:
+def _source_label(
+    source: str,
+    mirror_url: str | None,
+    latency_ms: int | None,
+    degraded: bool = False,
+) -> str:
     mirror_name = ""
     if mirror_url:
         mirror_name = mirror_url.replace("https://", "").replace("http://", "").split("/")[0]
     latency_str = f", {latency_ms}ms" if latency_ms is not None else ""
     mirror_info = f" ({mirror_name}{latency_str})" if mirror_name else ""
+
+    if degraded:
+        if source == "cache":
+            return "stale cache (degraded)"
+        elif source == "local":
+            return "offline catalog (degraded)"
+        return f"{source} (degraded)"
 
     if source == "cache":
         return f"cache{mirror_info}"
@@ -240,8 +263,12 @@ def _format_results_text(
     page_hits = outcome.hits[start:end]
 
     q_display = escape(outcome.query_normalized or "")
-    source_str = _source_label(outcome.source, outcome.mirror_url, outcome.latency_ms)
-    degraded_note = "\n<i>⚠️ Sources temporarily degraded; showing cached results.</i>" if outcome.degraded else ""
+    source_str = _source_label(outcome.source, outcome.mirror_url, outcome.latency_ms, outcome.degraded)
+    degraded_note = (
+        "\n<i>⚠️ Upstream sources unreachable. Showing offline/stale catalogue results (degraded).</i>"
+        if outcome.degraded
+        else ""
+    )
     relaxed_note = "\n<i>ℹ️ Strict query returned no results; showing relaxed search results.</i>" if outcome.is_relaxed else ""
 
     lines = [
@@ -395,13 +422,34 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         size_str = format_file_size(book.file_size)
         title_str = escape(book.title)
 
-        links = build_links(book.md5)
-
-        if links:
-            links_formatted = "\n".join(f'• <a href="{url}"><b>{escape(label)}</b></a>' for label, url in links)
-            download_block = f"<b>Download links:</b>\n{links_formatted}\n\n<i>Tap a link to download in your browser.</i>"
-        else:
+        if not book.md5:
             download_block = "(no direct link)"
+        else:
+            clean_md5 = book.md5.strip().lower()
+            direct_url: str | None = None
+            mirror_mgr: MirrorManager | None = context.bot_data.get("mirror_manager")
+            if mirror_mgr:
+                try:
+                    direct_url = await mirror_mgr.resolve_direct_link(clean_md5)
+                except Exception as exc:
+                    logger.warning("[bot] Direct link resolution failed for %s: %s", clean_md5, exc)
+
+            if direct_url:
+                download_block = (
+                    "<b>Download:</b>\n"
+                    f'• <a href="{direct_url}"><b>⚡ Direct Download (One-Click)</b></a>\n'
+                    f'• <a href="https://libgen.la/ads.php?md5={clean_md5}">Libgen.la (Backup)</a>\n'
+                    f'• <a href="https://libgen.is/book/index.php?md5={clean_md5}">Libgen.is (Backup)</a>\n\n'
+                    "<i>Link is temporary. Tap the book again for a fresh one.</i>"
+                )
+            else:
+                links = build_links(book.md5)
+                links_formatted = "\n".join(f'• <a href="{url}"><b>{escape(label)}</b></a>' for label, url in links)
+                download_block = (
+                    "<i>⚠️ Direct download link unavailable; using landing page links:</i>\n\n"
+                    f"<b>Download links:</b>\n{links_formatted}\n\n"
+                    "<i>Tap a link to download in your browser.</i>"
+                )
 
         spec_parts = []
         if format_str:
@@ -570,6 +618,7 @@ def build_application(config: Config) -> Application:
     # Register handlers
     app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(CommandHandler("help", handle_help))
+    app.add_handler(CommandHandler("faq", handle_help))
     app.add_handler(CommandHandler("status", handle_status))
     app.add_handler(CommandHandler("mirrors", handle_mirrors))
     app.add_handler(CommandHandler("rebuild", handle_rebuild))
@@ -586,6 +635,8 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     try:
         config = load_config()
     except Exception as exc:

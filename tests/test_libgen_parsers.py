@@ -143,3 +143,63 @@ def test_missing_optional_fields_parsing():
     assert hits_is[0].year is None
     assert hits_is[0].md5 == "11223344556677889900aabbccddeeff"
 
+
+def test_extract_get_link():
+    from sources.libgen import extract_get_link
+
+    mirror = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    html_sample = """
+    <div id="download">
+        <h2>Download:</h2>
+        <a href="get.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8&key=ABCDEF1234567890">GET</a>
+    </div>
+    """
+    direct_link = extract_get_link(html_sample, mirror, "7a7ef891b9d2b2ae8d9cd864556f7cd8")
+    assert direct_link == "https://libgen.li/get.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8&key=ABCDEF1234567890"
+
+
+def test_extract_get_link_mismatched_or_invalid():
+    from sources.libgen import extract_get_link
+
+    mirror = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    html_sample = '<a href="get.php?md5=11111111111111111111111111111111&key=ABCDEF1234567890">GET</a>'
+    # MD5 mismatch
+    assert extract_get_link(html_sample, mirror, "7a7ef891b9d2b2ae8d9cd864556f7cd8") is None
+    # Invalid MD5
+    assert extract_get_link(html_sample, mirror, "invalid-md5") is None
+
+
+import pytest
+import httpx
+
+
+@pytest.mark.asyncio
+async def test_resolve_direct_download_link_success():
+    from sources.libgen import resolve_direct_download_link
+
+    mirror = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    html_sample = '<a href="get.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8&key=KEY12345678">GET</a>'
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        assert "ads.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8" in str(request.url)
+        return httpx.Response(200, text=html_sample)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    resolved = await resolve_direct_download_link(mirror, "7a7ef891b9d2b2ae8d9cd864556f7cd8", client=client)
+    assert resolved == "https://libgen.li/get.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8&key=KEY12345678"
+
+
+@pytest.mark.asyncio
+async def test_resolve_direct_download_link_http_failure():
+    from sources.libgen import resolve_direct_download_link
+
+    mirror = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="Internal Server Error")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    resolved = await resolve_direct_download_link(mirror, "7a7ef891b9d2b2ae8d9cd864556f7cd8", client=client)
+    assert resolved is None
+
+

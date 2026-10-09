@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 import logging
 import re
 from urllib.parse import quote_plus
+import httpx
 
 from models import Mirror, SearchHit
 from sources.base import SourceParser
@@ -290,3 +291,73 @@ def get_parser_for_mirror(mirror: Mirror) -> SourceParser:
     if mirror.fork == "is":
         return is_parser
     return li_parser
+
+
+_MD5_RE = re.compile(r"^[0-9a-f]{32}$")
+_GET_LINK_RE = re.compile(
+    r"""href\s*=\s*["']get\.php\?md5=([0-9a-fA-F]{32})(?:&amp;|&)key=([A-Za-z0-9]{8,64})["']""",
+    re.IGNORECASE,
+)
+
+
+def extract_get_link(html_text: str, mirror: Mirror, md5: str) -> str | None:
+    """Extract the temporary direct-download ("GET") link from a li-fork ads.php page.
+
+    The page embeds a server-rendered ``get.php?md5=<md5>&key=<key>`` link. The key is
+    issued per request and is temporary. The returned URL is rebuilt from the validated
+    md5 and key tokens on the mirror that served the page, so nothing from the page other
+    than the key is trusted. Returns None if no matching link is present.
+    """
+    clean_md5 = (md5 or "").strip().lower()
+    if not _MD5_RE.match(clean_md5):
+        return None
+    for found_md5, key in _GET_LINK_RE.findall(html_text or ""):
+        if found_md5.lower() == clean_md5:
+            return f"{mirror.url.rstrip('/')}/get.php?md5={clean_md5}&key={key}"
+    return None
+
+
+async def resolve_direct_download_link(
+    mirror: Mirror,
+    md5: str,
+    client: httpx.AsyncClient | None = None,
+    timeout: float = 8.0,
+) -> str | None:
+    """Fetch the ads.php page on a li mirror and extract the temporary GET direct download link.
+
+    Returns the resolved URL (e.g. https://libgen.li/get.php?md5=...&key=...) or None if failed.
+    """
+    clean_md5 = (md5 or "").strip().lower()
+    if not _MD5_RE.match(clean_md5):
+        return None
+    if mirror.fork != "li":
+        return None
+
+    close_client = False
+    if client is None:
+        client = httpx.AsyncClient(timeout=timeout)
+        close_client = True
+
+    url = f"{mirror.url.rstrip('/')}/ads.php?md5={clean_md5}"
+    try:
+        resp = await client.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+                )
+            },
+            timeout=timeout,
+            follow_redirects=True,
+        )
+        if resp.status_code == 200:
+            return extract_get_link(resp.text, mirror, clean_md5)
+        return None
+    except Exception as exc:
+        logger.warning("[libgen] Direct link extraction failed on %s: %s", mirror.url, exc)
+        return None
+    finally:
+        if close_client:
+            await client.aclose()
+

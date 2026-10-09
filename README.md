@@ -37,21 +37,21 @@ Nabu separates discovery from file delivery:
 ┌─────────────────────────────────────────────────────────────┐
 │ src/search.py (SearchService)                               │
 │                                                             │
-│  Step A: Check search_cache table (TTL: 24h)                │
-│          ├── HIT: Return cached book IDs (0 network calls)  │
-│          └── MISS: Query local books_fts table              │
+│  Step A: Check search_cache table (TTL: 12h)                │
+│          ├── HIT: Return cached book IDs (verbatim repeat)  │
+│          └── MISS: Query upstream for fresh results         │
 │                                                             │
-│  Step B: Evaluate local FTS hit count                       │
-│          ├── >= 3 hits: Serve local catalog results         │
-│          └── < 3 hits: Trigger SingleFlight scrape          │
-│                                                             │
-│  Step C: Upstream SingleFlight Scrape                       │
+│  Step B: Upstream SingleFlight Scrape                       │
 │          ├── Acquire HostRateLimiter (750ms delay)          │
 │          ├── Acquire GlobalSemaphore (max 4 concurrent)     │
 │          ├── Query healthiest mirror (libgen.li / .is)      │
 │          ├── Parse HTML table into SearchHit records        │
 │          ├── Upsert metadata & MD5 into SQLite books table  │
 │          └── Cache query IDs into search_cache              │
+│                                                             │
+│  Step C: Degraded Fallback (All Mirrors Down)               │
+│          ├── Stale cache check -> Return stale entries      │
+│          └── Local FTS fallback -> Return offline hits      │
 └──────────────────────────────┬──────────────────────────────┘
                                │
                                ▼
@@ -66,10 +66,10 @@ Nabu separates discovery from file delivery:
 │                                                             │
 │  1. Acknowledge callback immediately (clears spinner)       │
 │  2. Fetch book row from SQLite catalog by primary key       │
-│  3. Call build_links(md5) -> 3 mirror download URLs         │
-│  4. Render HTML message with download links                 │
-│                                                             │
-│  ZERO SERVER NETWORK CALLS ON SELECTION                     │
+│  3. Resolve direct download link (get.php?md5=...&key=...)  │
+│     ├── SUCCESS: Serve direct one-click download link       │
+│     └── FAILURE: Fall back to ads.php mirror landing page   │
+│  4. Render HTML message with clear temporary link notice    │
 └──────────────────────────────┬──────────────────────────────┘
                                │
                                ▼
@@ -230,7 +230,7 @@ All configuration settings load from environment variables or a local `.env` fil
 | `TELEGRAM_ALLOWED_USER_IDS` | string | *Required* | Comma-separated list of numeric Telegram user IDs permitted to use the bot. |
 | `DB_PATH` | path | `data/books.db` | File path for the SQLite database. |
 | `LOCAL_RESULT_THRESHOLD` | integer | `3` | Minimum number of local FTS catalog hits required before skipping upstream scraping. |
-| `SEARCH_CACHE_TTL` | float | `86400.0` | Cache time-to-live for populated search queries, in seconds (default: 24 hours). |
+| `SEARCH_CACHE_TTL` | float | `43200.0` | Cache time-to-live for populated search queries, in seconds (default: 12 hours). |
 | `EMPTY_RESULT_CACHE_TTL` | float | `300.0` | Cache time-to-live for empty search queries (0 hits), in seconds (default: 5 minutes). |
 | `MAX_UPSTREAM` | integer | `4` | Maximum number of concurrent outbound HTTP requests. |
 | `POLITE_DELAY_MS` | integer | `750` | Minimum delay in milliseconds between requests to the same mirror host. |
@@ -251,8 +251,8 @@ All configuration settings load from environment variables or a local `.env` fil
 
 The bot exposes the following commands to authorized users:
 
-### `/start` and `/help`
-Displays an overview of search instructions, syntax, and bot capabilities.
+### `/start`, `/help`, and `/faq`
+Displays an overview of search instructions, syntax, bot capabilities, and frequently asked questions.
 
 ### `/status`
 Reports operational health and performance statistics:
@@ -271,6 +271,20 @@ Lists all configured mirrors with real-time operational status:
 
 ### `/rebuild`
 Triggers an immediate, synchronous rebuild of the SQLite `FTS5` virtual table index (`books_fts`) from the `books` table. Use this command after manual database modifications or bulk imports.
+
+---
+
+## Frequently Asked Questions (FAQ)
+
+### Why did my direct download link expire or fail to start?
+Direct download links generated from Libgen (`https://libgen.li/get.php?md5=...&key=...`) contain temporary cryptographic session keys that are only valid for a few minutes. If a download fails to start or says expired/forbidden, **simply tap the book card again in Telegram** to generate a fresh link.
+
+### What happens if upstream mirrors are offline?
+Nabu automatically falls back to cached and local catalogue results when all upstream mirrors are unreachable. These responses are explicitly labeled with degraded provenance notices (`offline catalogue (degraded)` or `stale cache (degraded)`) so you know you are viewing offline data.
+
+### How is logging security maintained?
+HTTP client logs (`httpx` and `httpcore`) are silenced to `WARNING` level by default. This guarantees that private Telegram bot authentication tokens and search query strings are never leaked into server logs or console output.
+
 
 ---
 

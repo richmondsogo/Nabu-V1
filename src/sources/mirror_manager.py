@@ -96,3 +96,55 @@ class MirrorManager:
     def startup_probe(self, client: httpx.AsyncClient | None = None) -> asyncio.Task:
         """Launch background health check on startup. Never blocks boot."""
         return asyncio.create_task(self.probe_all(client=client))
+
+    async def resolve_direct_link(
+        self,
+        md5: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> str | None:
+        """Resolve a temporary direct download link from the healthiest active li-fork mirror.
+
+        Returns the temporary direct download URL (e.g. https://libgen.li/get.php?md5=...&key=...)
+        or None if all attempts fail.
+        """
+        clean_md5 = (md5 or "").strip().lower()
+        if not clean_md5 or len(clean_md5) != 32:
+            return None
+
+        # Prefer active 'li' mirrors
+        mirrors = await self.get_active_mirrors("libgen")
+        li_mirrors = [m for m in mirrors if m.fork == "li"]
+        if not li_mirrors:
+            all_mirrors = await self.db.get_all_mirrors("libgen")
+            li_mirrors = [m for m in all_mirrors if m.fork == "li"]
+        if not li_mirrors:
+            li_mirrors = [Mirror(url="https://libgen.li", fork="li", source="libgen", enabled=True)]
+
+        close_client = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=httpx.Timeout(self.connect_timeout, connect=self.connect_timeout))
+            close_client = True
+
+        try:
+            for mirror in li_mirrors:
+                try:
+                    ads_url = f"{mirror.url.rstrip('/')}/ads.php?md5={clean_md5}"
+                    resp = await client.get(
+                        ads_url,
+                        headers={"User-Agent": USER_AGENT},
+                        follow_redirects=True,
+                    )
+                    if resp.status_code == 200:
+                        from sources.libgen import extract_get_link
+
+                        get_link = extract_get_link(resp.text, mirror, clean_md5)
+                        if get_link:
+                            return get_link
+                except Exception as exc:
+                    logger.debug("[MirrorManager] Direct link extraction failed on %s: %s", mirror.url, exc)
+                    continue
+            return None
+        finally:
+            if close_client:
+                await client.aclose()
+

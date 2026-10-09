@@ -278,3 +278,66 @@ async def test_callback_pagination_page_switch(mock_config: Config, mock_db: Dat
     assert "9-10 of 10" in msg_html or "Page 2" in msg_html or "Test Book 8" in msg_html
 
 
+@pytest.mark.asyncio
+async def test_callback_resolves_direct_download_link(mock_config: Config, mock_db: Database):
+    book = await mock_db.insert_book(
+        title="Direct Download Book",
+        author="Author Name",
+        md5="1234567890abcdef1234567890abcdef",
+        file_size=1024,
+        file_type="pdf",
+    )
+
+    update = MagicMock()
+    query = update.callback_query
+    query.from_user.id = 1001
+    query.data = f"book:{book.id}"
+    query.answer = AsyncMock()
+    query.message.reply_text = AsyncMock()
+
+    mock_mirror_mgr = MagicMock()
+    mock_mirror_mgr.resolve_direct_link = AsyncMock(
+        return_value="https://libgen.li/get.php?md5=1234567890abcdef1234567890abcdef&key=KEY12345"
+    )
+
+    context = MagicMock()
+    context.bot_data = {
+        "config": mock_config,
+        "db": mock_db,
+        "mirror_manager": mock_mirror_mgr,
+        "search_service": MagicMock(),
+    }
+
+    await handle_callback(update, context)
+
+    query.message.reply_text.assert_called_once()
+    msg_html = query.message.reply_text.call_args[0][0]
+    assert "https://libgen.li/get.php?md5=1234567890abcdef1234567890abcdef&key=KEY12345" in msg_html
+    assert "Link is temporary. Tap the book again for a fresh one." in msg_html
+    assert "Direct Download" in msg_html
+
+
+@pytest.mark.asyncio
+async def test_faq_and_help_faq_content(mock_config: Config, mock_db: Database):
+    update = MagicMock()
+    update.effective_user.id = 1001
+    update.effective_message.reply_text = AsyncMock()
+
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "db": mock_db}
+
+    await handle_help(update, context)
+    update.effective_message.reply_text.assert_called_once()
+    msg = update.effective_message.reply_text.call_args[0][0]
+    assert "Frequently Asked Questions (FAQ)" in msg
+    assert "Direct download keys are temporary" in msg
+    assert "simply tap the book card again in Telegram" in msg
+
+
+def test_httpx_logging_silenced():
+    import logging
+    assert logging.getLogger("httpx").level >= logging.WARNING
+    assert logging.getLogger("httpcore").level >= logging.WARNING
+
+
+

@@ -34,11 +34,13 @@ Resolve search quality, low result count, and lack of transparency in Nabu. Deco
    - `_rank_books`: Deterministic relevance ranking prioritizing exact title matches, full token matches, author token matches, partial title matches, and metadata completeness.
    - Audited parsers: `LiForkParser` and `IsForkParser` retain rows with missing optional fields (year, publisher, language) and log warnings when rows cannot be parsed.
 
-6. **Telegram UX & Transparency (`src/bot.py`, `src/models.py`)**:
+6. **Telegram UX & Typography Presentation (`src/bot.py`, `src/models.py`)**:
    - Extended `SearchOutcome` with `source: Literal["cache", "local", "upstream", "mixed"]`, `total_count`, `mirror_url`, `latency_ms`, `query_normalized`, `is_relaxed`, and `upstream_reached`.
-   - Transparency header: Displays normalized query, count, range, provenance icon (`💾 cache`, `🗂️ local`, `🌐 upstream`, `🔀 mixed`), mirror URL, and latency in milliseconds.
+   - Clean search header: Displays bold query, hit count, range, provenance, and latency with minimal punctuation and no emoji clutter.
+   - Refined book cards: Clean bold titles with middot-separated author, format, and size lines, removing noisy icons (`👤`, `📦`, `📖`).
+   - Book detail view: Elegant typography with clear title, author, format tag, and bold download mirror links.
    - Inline keyboard: Formats compact specs (`[EXT] Title - Author`) with `⬅️ Prev`, `Page X/Y`, `Next ➡️` navigation and `🔄 Refresh` button.
-   - Helpful empty state explains whether upstream was contacted and suggests broader terms.
+   - Clean empty state explains whether upstream was contacted and suggests broader terms.
    - Strict authorization maintained across all commands and callback queries.
 
 ## Verification

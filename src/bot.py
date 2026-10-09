@@ -93,13 +93,13 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     welcome_text = (
-        "📚 <b>Welcome to Nabu</b>\n\n"
-        "Send me any book title or author to search.\n"
+        "<b>Welcome to Nabu</b>\n\n"
+        "Send any book title or author to search.\n"
         "Tap a result to receive direct browser download links.\n\n"
         "<b>Commands:</b>\n"
         "/status — System health & cache statistics\n"
         "/mirrors — Upstream mirror status & latencies\n"
-        "/rebuild — Rebuild search index"
+        "/rebuild — Rebuild local search index"
     )
     if update.effective_message:
         await update.effective_message.reply_text(welcome_text, parse_mode=ParseMode.HTML)
@@ -128,14 +128,14 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         cache_cnt = cache_row["cnt"] if cache_row else 0
 
     status_text = (
-        "📊 <b>Nabu Status</b>\n\n"
-        f"📖 Catalog books: <b>{books_cnt}</b>\n"
-        f"🔍 Cached searches: <b>{cache_cnt}</b>\n"
-        f"🌐 Active mirrors: <b>{active_count}/{len(mirrors)}</b>\n\n"
-        f"⚡ <b>Performance:</b>\n"
-        f"• Cache hits: {_stats['cache_hits']}\n"
-        f"• Local FTS hits: {_stats['local_hits']}\n"
-        f"• Upstream scrapes: {_stats['upstream_requests']}"
+        "<b>Nabu Status</b>\n\n"
+        f"Catalog books: <b>{books_cnt:,}</b>\n"
+        f"Cached searches: <b>{cache_cnt:,}</b>\n"
+        f"Active mirrors: <b>{active_count}/{len(mirrors)}</b>\n\n"
+        "<b>Traffic:</b>\n"
+        f"• Cache hits: {_stats['cache_hits']:,}\n"
+        f"• Local catalog hits: {_stats['local_hits']:,}\n"
+        f"• Upstream scrapes: {_stats['upstream_requests']:,}"
     )
     if update.effective_message:
         await update.effective_message.reply_text(status_text, parse_mode=ParseMode.HTML)
@@ -200,30 +200,30 @@ def _source_label(source: str, mirror_url: str | None, latency_ms: int | None) -
     mirror_name = ""
     if mirror_url:
         mirror_name = mirror_url.replace("https://", "").replace("http://", "").split("/")[0]
-    latency_str = f" · {latency_ms}ms" if latency_ms is not None else ""
+    latency_str = f", {latency_ms}ms" if latency_ms is not None else ""
     mirror_info = f" ({mirror_name}{latency_str})" if mirror_name else ""
 
     if source == "cache":
-        return f"💾 local cache{mirror_info}"
+        return f"cache{mirror_info}"
     elif source == "local":
-        return "🗂️ local catalog"
+        return "local catalog"
     elif source == "upstream":
-        return f"🌐 live upstream{mirror_info}"
+        return f"live upstream{mirror_info}"
     elif source == "mixed":
-        return f"🔀 mixed (catalog + upstream){mirror_info}"
+        return f"catalog + upstream{mirror_info}"
     return f"{source}{mirror_info}"
 
 
 def _format_empty_results_text(query: str, upstream_reached: bool = False) -> str:
     upstream_status = "Live upstream sources were queried." if upstream_reached else "Local catalog was queried."
     return (
-        f'🔍 No books found for "<b>{escape(query)}</b>".\n\n'
-        f"📡 <i>{upstream_status}</i>\n\n"
-        "💡 <b>Suggestions:</b>\n"
-        "• Check the spelling of title and author\n"
-        "• Try searching by author's last name only\n"
-        "• Try fewer or more general keywords\n"
-        "• Tap 🔄 Refresh in a moment if mirrors were busy"
+        f'No books found for <b>"{escape(query)}"</b>.\n\n'
+        f"<i>{upstream_status}</i>\n\n"
+        "<b>Suggestions:</b>\n"
+        "• Check spelling of title and author\n"
+        "• Search by author's last name only\n"
+        "• Try fewer or broader keywords\n"
+        "• Tap 🔄 Refresh if sources were temporarily busy"
     )
 
 
@@ -245,23 +245,26 @@ def _format_results_text(
     relaxed_note = "\n<i>ℹ️ Strict query returned no results; showing relaxed search results.</i>" if outcome.is_relaxed else ""
 
     lines = [
-        f"🔍 <b>Search:</b> <code>{q_display}</code>",
-        f"📚 <b>Results:</b> Found {total} result(s): Showing {start + 1}–{end} of {total} (Page {page}/{total_pages})",
-        f"📡 <b>Source:</b> {source_str}{degraded_note}{relaxed_note}",
+        f"<b>Search:</b> <code>{q_display}</code>",
+        f"Found {total} result(s): Showing {start + 1}–{end} of {total} (Page {page}/{total_pages}) · {source_str}{degraded_note}{relaxed_note}",
         "",
     ]
 
     for idx, b in enumerate(page_hits, start=start + 1):
-        author_str = escape(b.author) if b.author else "Unknown author"
         meta_parts = []
+        if b.author:
+            meta_parts.append(escape(b.author))
         if b.file_type:
             meta_parts.append(escape(b.file_type.upper()))
         if b.file_size:
             meta_parts.append(format_file_size(b.file_size))
-        meta_info = f" · {', '.join(meta_parts)}" if meta_parts else ""
-        lines.append(f"{idx}. <b>{escape(b.title)}</b>\n   👤 {author_str}{meta_info}")
+        meta_info = " · ".join(meta_parts)
+        if meta_info:
+            lines.append(f"{idx}. <b>{escape(b.title)}</b>\n   {meta_info}\n")
+        else:
+            lines.append(f"{idx}. <b>{escape(b.title)}</b>\n")
 
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip()
 
 
 def _format_search_keyboard(
@@ -387,23 +390,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         # Format message template (HTML)
-        author_str = escape(book.author) if book.author else "Unknown"
-        format_str = escape(book.file_type.upper()) if book.file_type else "Unknown format"
+        author_str = escape(book.author) if book.author else ""
+        format_str = escape(book.file_type.upper()) if book.file_type else ""
         size_str = format_file_size(book.file_size)
         title_str = escape(book.title)
 
         links = build_links(book.md5)
 
         if links:
-            links_formatted = "\n".join(f'• <a href="{url}">{escape(label)}</a>' for label, url in links)
-            download_block = f"⬇️ <b>Download</b>\n{links_formatted}\n\n<i>Tap a link to download in your browser.</i>"
+            links_formatted = "\n".join(f'• <a href="{url}"><b>{escape(label)}</b></a>' for label, url in links)
+            download_block = f"<b>Download links:</b>\n{links_formatted}\n\n<i>Tap a link to download in your browser.</i>"
         else:
             download_block = "(no direct link)"
 
+        spec_parts = []
+        if format_str:
+            spec_parts.append(format_str)
+        if size_str and size_str != "Unknown size":
+            spec_parts.append(size_str)
+        spec_line = f"\n{' · '.join(spec_parts)}" if spec_parts else ""
+        author_line = f"\n{author_str}" if author_str else ""
+
         msg_html = (
-            f"📖 <b>{title_str}</b>\n"
-            f"👤 {author_str}\n"
-            f"📦 {format_str} · {size_str}\n\n"
+            f"<b>{title_str}</b>"
+            f"{author_line}"
+            f"{spec_line}\n\n"
             f"{download_block}"
         )
 

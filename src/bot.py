@@ -192,17 +192,109 @@ async def handle_rebuild(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # -----------------------------------------------------------------------------
-# Handlers: Text Search
+# -----------------------------------------------------------------------------
+# Handlers: Text Search & Presentation
 # -----------------------------------------------------------------------------
 
-def _format_search_keyboard(hits: list[Book], qhash: str) -> InlineKeyboardMarkup:
-    """Construct inline buttons for book results plus a refresh button."""
+def _source_label(source: str, mirror_url: str | None, latency_ms: int | None) -> str:
+    mirror_name = ""
+    if mirror_url:
+        mirror_name = mirror_url.replace("https://", "").replace("http://", "").split("/")[0]
+    latency_str = f" · {latency_ms}ms" if latency_ms is not None else ""
+    mirror_info = f" ({mirror_name}{latency_str})" if mirror_name else ""
+
+    if source == "cache":
+        return f"💾 local cache{mirror_info}"
+    elif source == "local":
+        return "🗂️ local catalog"
+    elif source == "upstream":
+        return f"🌐 live upstream{mirror_info}"
+    elif source == "mixed":
+        return f"🔀 mixed (catalog + upstream){mirror_info}"
+    return f"{source}{mirror_info}"
+
+
+def _format_empty_results_text(query: str, upstream_reached: bool = False) -> str:
+    upstream_status = "Live upstream sources were queried." if upstream_reached else "Local catalog was queried."
+    return (
+        f'🔍 No books found for "<b>{escape(query)}</b>".\n\n'
+        f"📡 <i>{upstream_status}</i>\n\n"
+        "💡 <b>Suggestions:</b>\n"
+        "• Check the spelling of title and author\n"
+        "• Try searching by author's last name only\n"
+        "• Try fewer or more general keywords\n"
+        "• Tap 🔄 Refresh in a moment if mirrors were busy"
+    )
+
+
+def _format_results_text(
+    outcome: SearchOutcome,
+    page: int = 1,
+    page_size: int = 8,
+) -> str:
+    total = len(outcome.hits)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    end = min(start + page_size, total)
+    page_hits = outcome.hits[start:end]
+
+    q_display = escape(outcome.query_normalized or "")
+    source_str = _source_label(outcome.source, outcome.mirror_url, outcome.latency_ms)
+    degraded_note = "\n<i>⚠️ Sources temporarily degraded; showing cached results.</i>" if outcome.degraded else ""
+    relaxed_note = "\n<i>ℹ️ Strict query returned no results; showing relaxed search results.</i>" if outcome.is_relaxed else ""
+
+    lines = [
+        f"🔍 <b>Search:</b> <code>{q_display}</code>",
+        f"📚 <b>Results:</b> Found {total} result(s): Showing {start + 1}–{end} of {total} (Page {page}/{total_pages})",
+        f"📡 <b>Source:</b> {source_str}{degraded_note}{relaxed_note}",
+        "",
+    ]
+
+    for idx, b in enumerate(page_hits, start=start + 1):
+        author_str = escape(b.author) if b.author else "Unknown author"
+        meta_parts = []
+        if b.file_type:
+            meta_parts.append(escape(b.file_type.upper()))
+        if b.file_size:
+            meta_parts.append(format_file_size(b.file_size))
+        meta_info = f" · {', '.join(meta_parts)}" if meta_parts else ""
+        lines.append(f"{idx}. <b>{escape(b.title)}</b>\n   👤 {author_str}{meta_info}")
+
+    return "\n".join(lines)
+
+
+def _format_search_keyboard(
+    hits: list[Book],
+    qhash: str,
+    page: int = 1,
+    page_size: int = 8,
+) -> InlineKeyboardMarkup:
+    """Construct inline buttons for book results with Prev/Next pagination and refresh."""
+    total = len(hits)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    end = min(start + page_size, total)
+    page_hits = hits[start:end]
+
     buttons = []
-    for b in hits:
+    for idx, b in enumerate(page_hits, start=start + 1):
+        ext_tag = f"[{b.file_type.upper()}] " if b.file_type else ""
         author_part = f" — {b.author}" if b.author else ""
-        raw_label = f"{b.title}{author_part}"
+        raw_label = f"{idx}. {ext_tag}{b.title}{author_part}"
         label = (raw_label[:57] + "...") if len(raw_label) > 60 else raw_label
         buttons.append([InlineKeyboardButton(label, callback_data=encode_callback("book", b.id))])
+
+    # Navigation buttons (Page Prev / Next)
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=encode_callback("page", qhash, page - 1)))
+        nav_row.append(InlineKeyboardButton(f"Page {page}/{total_pages}", callback_data=encode_callback("noop", qhash)))
+        if page < total_pages:
+            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=encode_callback("page", qhash, page + 1)))
+        buttons.append(nav_row)
 
     # Append refresh button
     buttons.append([InlineKeyboardButton("🔄 Refresh from sources", callback_data=encode_callback("refresh", qhash))])
@@ -231,17 +323,19 @@ async def handle_text_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
             _stats["cache_hits"] += 1
         elif outcome.source == "local":
             _stats["local_hits"] += 1
-        elif outcome.source == "upstream":
+        elif outcome.source in ("upstream", "mixed"):
             _stats["upstream_requests"] += 1
 
         if not outcome.hits:
             if update.effective_message:
-                await update.effective_message.reply_text(f'No books found for "{escape(query)}".', parse_mode=ParseMode.HTML)
+                await update.effective_message.reply_text(
+                    _format_empty_results_text(query, upstream_reached=outcome.upstream_reached),
+                    parse_mode=ParseMode.HTML,
+                )
             return
 
-        degraded_note = "\n<i>⚠️ Sources temporarily degraded; showing cached results.</i>" if outcome.degraded else ""
-        text = f"Found {len(outcome.hits)} result(s):{degraded_note}"
-        reply_markup = _format_search_keyboard(outcome.hits, qh)
+        text = _format_results_text(outcome, page=1, page_size=config.page_size)
+        reply_markup = _format_search_keyboard(outcome.hits, qh, page=1, page_size=config.page_size)
 
         if update.effective_message:
             await update.effective_message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
@@ -269,12 +363,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     config: Config = context.bot_data["config"]
     db: Database = context.bot_data["db"]
-    search_service: SearchService = context.bot_data["search_service"]
     user_id = query.from_user.id if query.from_user else None
 
     if not is_authorized(user_id, config):
         await query.answer("Sorry, this bot is private.", show_alert=True)
         return
+
+    search_service: SearchService = context.bot_data.get("search_service")
 
     # Acknowledge callback immediately to eliminate Telegram loading spinner
     await query.answer()
@@ -338,12 +433,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
             if not outcome.hits:
                 if query.message:
-                    await query.message.reply_text(f'No books found for "{escape(raw_query)}".', parse_mode=ParseMode.HTML)
+                    await query.message.reply_text(
+                        _format_empty_results_text(raw_query, upstream_reached=outcome.upstream_reached),
+                        parse_mode=ParseMode.HTML,
+                    )
                 return
 
-            degraded_note = "\n<i>⚠️ Sources temporarily degraded; showing cached results.</i>" if outcome.degraded else ""
-            text = f"Refreshed results ({len(outcome.hits)}):{degraded_note}"
-            reply_markup = _format_search_keyboard(outcome.hits, qh)
+            text = _format_results_text(outcome, page=1, page_size=config.page_size)
+            reply_markup = _format_search_keyboard(outcome.hits, qh, page=1, page_size=config.page_size)
             if query.message:
                 await query.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
@@ -356,6 +453,46 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             logger.error("Error refreshing %r: %s", raw_query, exc, exc_info=True)
             if query.message:
                 await query.message.reply_text("⚠️ An error occurred while refreshing.")
+
+    elif action == "page":
+        if len(args) < 2:
+            return
+        qh = args[0]
+        try:
+            page_num = int(args[1])
+        except ValueError:
+            return
+
+        reg_entry = _query_registry.get(qh)
+        if not reg_entry:
+            await query.answer("Search expired. Please search again.", show_alert=True)
+            return
+
+        raw_query, _ = reg_entry
+        qn = normalize_query(raw_query)
+        cached = await db.get_search_cache(qn)
+        if not cached:
+            outcome = await search_service.search_books(raw_query, user_id=user_id)
+        else:
+            book_ids = cached[0]
+            books = await db.get_books_by_ids(book_ids)
+            outcome = SearchOutcome(
+                hits=books,
+                source="cache",
+                total_count=len(books),
+                query_normalized=qn,
+            )
+
+        text = _format_results_text(outcome, page=page_num, page_size=config.page_size)
+        reply_markup = _format_search_keyboard(outcome.hits, qh, page=page_num, page_size=config.page_size)
+        if query.message:
+            try:
+                await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.debug("Failed editing message for page navigation: %s", e)
+
+    elif action == "noop":
+        await query.answer()
 
 
 # -----------------------------------------------------------------------------

@@ -73,6 +73,12 @@ class Mirror:
 @dataclass(frozen=True)
 class SearchOutcome:
     hits: list[Book]
-    source: Literal["cache", "local", "upstream"]
+    source: Literal["cache", "local", "upstream", "mixed"]
     degraded: bool = False
+    total_count: int = 0
+    mirror_url: str | None = None
+    latency_ms: int | None = None
+    query_normalized: str = ""
+    is_relaxed: bool = False
+    upstream_reached: bool = False
 

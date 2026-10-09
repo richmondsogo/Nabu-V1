@@ -8,6 +8,7 @@ and an async-safe wrapper around synchronous sqlite3 operations.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -104,7 +105,10 @@ CREATE TABLE IF NOT EXISTS search_cache (
     query_norm TEXT PRIMARY KEY,
     book_ids   TEXT NOT NULL,
     fetched_at REAL NOT NULL,
-    expires_at REAL NOT NULL
+    expires_at REAL NOT NULL,
+    is_complete INTEGER NOT NULL DEFAULT 1,
+    pages_fetched INTEGER NOT NULL DEFAULT 1,
+    total_upstream INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS mirrors (
@@ -162,12 +166,31 @@ def _row_to_mirror(row: sqlite3.Row) -> Mirror:
     )
 
 
-def _sanitize_fts_query(raw_query: str) -> str:
-    """Sanitize user search string into valid FTS5 prefix match tokens."""
+@dataclass
+class SearchCacheEntry:
+    book_ids: list[int]
+    expires_at: float
+    is_complete: bool = True
+    pages_fetched: int = 1
+    total_upstream: int = 0
+
+    def __iter__(self):
+        return iter((self.book_ids, self.expires_at))
+
+    def __getitem__(self, index):
+        return (self.book_ids, self.expires_at, self.is_complete, self.pages_fetched, self.total_upstream)[index]
+
+    def __len__(self):
+        return 5
+
+
+def _sanitize_fts_query(raw_query: str, op: str = "AND") -> str:
+    """Sanitize user search string into valid FTS5 prefix match tokens with AND or OR operator."""
     tokens = re.findall(r"\w+", raw_query, re.UNICODE)
     if not tokens:
         return ""
-    # Token prefix matching, e.g. "clean"* "code"*
+    if op == "OR":
+        return " OR ".join(f'"{token}"*' for token in tokens)
     return " ".join(f'"{token}"*' for token in tokens)
 
 
@@ -217,6 +240,18 @@ class Database:
             for col, col_def in additive_cols.items():
                 if col not in existing_cols:
                     conn.execute(f"ALTER TABLE books ADD COLUMN {col} {col_def}")
+
+            # Additive migration check for existing search_cache table
+            cursor_cache = conn.execute("PRAGMA table_info(search_cache)")
+            existing_cache_cols = {row["name"] for row in cursor_cache.fetchall()}
+            additive_cache_cols = {
+                "is_complete": "INTEGER NOT NULL DEFAULT 1",
+                "pages_fetched": "INTEGER NOT NULL DEFAULT 1",
+                "total_upstream": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for col, col_def in additive_cache_cols.items():
+                if col not in existing_cache_cols:
+                    conn.execute(f"ALTER TABLE search_cache ADD COLUMN {col} {col_def}")
 
             # Seed default sources
             conn.execute("INSERT OR IGNORE INTO sources (name) VALUES ('annas'), ('libgen')")
@@ -305,7 +340,42 @@ class Database:
                     # Catch syntax or operational errors and fall back to LIKE
                     pass
 
-            # 2. LIKE fallback if results are fewer than requested limit
+            # 2. Try forgiving FTS OR query if results from strict AND returned 0 hits
+            fts_or_query = _sanitize_fts_query(cleaned, op="OR")
+            if not found_books and fts_or_query and fts_or_query != fts_query:
+                try:
+                    sql_fts_or = """
+                        SELECT b.*
+                        FROM books b
+                        JOIN books_fts f ON b.id = f.rowid
+                        WHERE books_fts MATCH :query
+                        ORDER BY
+                          CASE
+                            WHEN lower(b.title) = lower(:exact) THEN 0
+                            WHEN lower(b.title) LIKE lower(:prefix) ESCAPE '\\' THEN 1
+                            ELSE 2
+                          END,
+                          bm25(books_fts, 12.0, 6.0, 2.0) ASC,
+                          b.title COLLATE NOCASE ASC
+                        LIMIT :limit;
+                    """
+                    cursor = conn.execute(
+                        sql_fts_or,
+                        {
+                            "query": fts_or_query,
+                            "exact": cleaned,
+                            "prefix": f"{_escape_like(cleaned)}%",
+                            "limit": limit,
+                        },
+                    )
+                    for row in cursor.fetchall():
+                        book = _row_to_book(row)
+                        found_books.append(book)
+                        found_ids.add(book.id)
+                except sqlite3.OperationalError:
+                    pass
+
+            # 3. LIKE fallback if results are fewer than requested limit
             if len(found_books) < limit:
                 needed = limit - len(found_books)
                 like_term = f"%{_escape_like(cleaned)}%"
@@ -357,10 +427,12 @@ class Database:
     # Search Cache Operations
     # -------------------------------------------------------------------------
 
-    def _get_search_cache_sync(self, query_norm: str) -> tuple[list[int], float] | None:
+    def _get_search_cache_sync(
+        self, query_norm: str
+    ) -> SearchCacheEntry | None:
         with self._get_connection() as conn:
             cursor = conn.execute(
-                "SELECT book_ids, expires_at FROM search_cache WHERE query_norm = ?",
+                "SELECT book_ids, expires_at, is_complete, pages_fetched, total_upstream FROM search_cache WHERE query_norm = ?",
                 (query_norm,),
             )
             row = cursor.fetchone()
@@ -368,31 +440,74 @@ class Database:
                 return None
             try:
                 ids = json.loads(row["book_ids"])
-                return (ids, float(row["expires_at"]))
+                keys = row.keys()
+                is_comp = bool(row["is_complete"]) if "is_complete" in keys else True
+                pgs = int(row["pages_fetched"]) if "pages_fetched" in keys else 1
+                tot = int(row["total_upstream"]) if "total_upstream" in keys else 0
+                return SearchCacheEntry(
+                    book_ids=ids,
+                    expires_at=float(row["expires_at"]),
+                    is_complete=is_comp,
+                    pages_fetched=pgs,
+                    total_upstream=tot,
+                )
             except Exception:
                 return None
 
-    async def get_search_cache(self, query_norm: str) -> tuple[list[int], float] | None:
+    async def get_search_cache(
+        self, query_norm: str
+    ) -> SearchCacheEntry | None:
         """Retrieve cached book IDs and expiry timestamp for normalized query."""
         return await asyncio.to_thread(self._get_search_cache_sync, query_norm)
 
-    def _set_search_cache_sync(self, query_norm: str, book_ids: list[int], ttl: float) -> None:
+    def _set_search_cache_sync(
+        self,
+        query_norm: str,
+        book_ids: list[int],
+        ttl: float,
+        is_complete: bool = True,
+        pages_fetched: int = 1,
+        total_upstream: int = 0,
+    ) -> None:
         now = time.time()
         expires_at = now + ttl
         payload = json.dumps(book_ids)
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO search_cache (query_norm, book_ids, fetched_at, expires_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO search_cache (query_norm, book_ids, fetched_at, expires_at, is_complete, pages_fetched, total_upstream)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(query_norm) DO UPDATE SET
+                    book_ids = excluded.book_ids,
+                    fetched_at = excluded.fetched_at,
+                    expires_at = excluded.expires_at,
+                    is_complete = excluded.is_complete,
+                    pages_fetched = excluded.pages_fetched,
+                    total_upstream = excluded.total_upstream
                 """,
-                (query_norm, payload, now, expires_at),
+                (query_norm, payload, now, expires_at, 1 if is_complete else 0, pages_fetched, total_upstream),
             )
             conn.commit()
 
-    async def set_search_cache(self, query_norm: str, book_ids: list[int], ttl: float) -> None:
-        """Store book IDs in search cache with TTL."""
-        await asyncio.to_thread(self._set_search_cache_sync, query_norm, book_ids, ttl)
+    async def set_search_cache(
+        self,
+        query_norm: str,
+        book_ids: list[int],
+        ttl: float,
+        is_complete: bool = True,
+        pages_fetched: int = 1,
+        total_upstream: int = 0,
+    ) -> None:
+        """Store book IDs in search cache with TTL and completion status."""
+        await asyncio.to_thread(
+            self._set_search_cache_sync,
+            query_norm,
+            book_ids,
+            ttl,
+            is_complete,
+            pages_fetched,
+            total_upstream,
+        )
 
     # -------------------------------------------------------------------------
     # Book Retrieval & Mutation
@@ -457,7 +572,7 @@ class Database:
         acquired_at: str | None = None,
         pinned: bool = False,
     ) -> int:
-        """Insert book or return existing ID on conflict (ON CONFLICT(md5) DO NOTHING)."""
+        """Insert book or update existing record on md5 conflict (upstream wins)."""
         now = _now_iso()
         with self._get_connection() as conn:
             if md5:
@@ -467,7 +582,14 @@ class Database:
                         title, author, cid, md5, filename, file_size, file_type,
                         description, created_at, source, source_id, acquired_at, pinned
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(md5) WHERE md5 IS NOT NULL DO NOTHING
+                    ON CONFLICT(md5) WHERE md5 IS NOT NULL DO UPDATE SET
+                        title = excluded.title,
+                        author = coalesce(excluded.author, books.author),
+                        file_size = coalesce(excluded.file_size, books.file_size),
+                        file_type = coalesce(excluded.file_type, books.file_type),
+                        source = coalesce(excluded.source, books.source),
+                        source_id = coalesce(excluded.source_id, books.source_id),
+                        description = coalesce(excluded.description, books.description)
                     """,
                     (
                         title,
@@ -485,8 +607,8 @@ class Database:
                         1 if pinned else 0,
                     ),
                 )
+                conn.commit()
                 if cursor.rowcount > 0 and cursor.lastrowid:
-                    conn.commit()
                     return cursor.lastrowid
 
                 # Existing row on conflict: fetch its id

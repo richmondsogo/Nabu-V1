@@ -1,6 +1,7 @@
 """Tests for search.py covering cache-first, FTS fallback, SingleFlight, and degraded states."""
 
 from pathlib import Path
+import time
 import pytest
 import httpx
 
@@ -68,33 +69,40 @@ def search_service(test_config: Config) -> tuple[SearchService, Database, list[s
 async def test_cache_hit_makes_zero_upstream_calls(search_service):
     service, db, upstream_calls = search_service
 
-    # First search -> misses cache and local, goes upstream
+    # First search -> misses cache and local, goes upstream (paginating across pages)
     outcome1 = await service.search_books("rust", user_id=1001)
     assert outcome1.source == "upstream"
     assert len(outcome1.hits) > 0
-    assert len(upstream_calls) == 1
+    first_calls = len(upstream_calls)
+    assert first_calls >= 1
 
-    # Second search -> warm cache hit, zero upstream calls
+    # Second search -> warm cache hit, zero additional upstream calls
     outcome2 = await service.search_books("rust", user_id=1001)
     assert outcome2.source == "cache"
     assert len(outcome2.hits) == len(outcome1.hits)
-    assert len(upstream_calls) == 1  # No additional calls
+    assert len(upstream_calls) == first_calls  # No additional calls
 
 
 @pytest.mark.asyncio
-async def test_local_fts_ge_threshold_makes_zero_upstream_calls(test_config: Config):
+async def test_local_fts_ge_threshold_still_queries_upstream_and_merges(test_config: Config):
     db = Database(test_config.db_path)
     db.init_schema()
 
-    # Pre-populate 4 books locally (threshold is 3)
+    # Pre-populate 4 books locally (threshold is 3, but target results is 50)
     for i in range(4):
         await db.insert_book(title=f"Python Cookbook Vol {i}", author="David Beazley", md5=f"pycook{i}")
 
     upstream_calls: list[str] = []
+    mock_html = """
+    <table>
+      <tr><th>Title</th><th>Author</th><th>Col3</th><th>Year</th><th>Lang</th><th>Col5</th><th>Size</th><th>Ext</th><th>Mirrors</th></tr>
+      <tr><td>Python Cookbook Vol 99</td><td>David Beazley</td><td>c</td><td>2022</td><td>EN</td><td>c</td><td>3 MB</td><td>pdf</td><td><a href="ads.php?md5=pycook99">1</a></td></tr>
+    </table>
+    """
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         upstream_calls.append(str(request.url))
-        return httpx.Response(200, text="<html></html>")
+        return httpx.Response(200, text=mock_html)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
     service = SearchService(
@@ -109,9 +117,12 @@ async def test_local_fts_ge_threshold_makes_zero_upstream_calls(test_config: Con
     )
 
     outcome = await service.search_books("Python Cookbook", user_id=1001)
-    assert outcome.source == "local"
-    assert len(outcome.hits) >= 3
-    assert len(upstream_calls) == 0  # Zero network calls!
+    # Upstream was still queried because local count (4) < target results (50)
+    assert len(upstream_calls) >= 1
+    assert outcome.source in ("upstream", "mixed")
+    titles = [b.title for b in outcome.hits]
+    assert any("Vol 99" in t for t in titles)
+    assert any("Vol 0" in t for t in titles)
 
 
 @pytest.mark.asyncio
@@ -124,7 +135,7 @@ async def test_local_fts_lt_threshold_goes_upstream_and_merges(test_config: Conf
 
     upstream_calls = []
 
-    # Return a fixture with 2 rows so merged result includes local hit within limit of 5
+    # Return a fixture with 2 rows so merged result includes local hit
     mock_html = """
     <table>
       <tr><th>Title</th><th>Author</th><th>Col3</th><th>Year</th><th>Lang</th><th>Col5</th><th>Size</th><th>Ext</th><th>Mirrors</th></tr>
@@ -150,7 +161,7 @@ async def test_local_fts_lt_threshold_goes_upstream_and_merges(test_config: Conf
     )
 
     outcome = await service.search_books("Rust", user_id=1001)
-    assert outcome.source == "upstream"
+    assert outcome.source in ("upstream", "mixed")
     assert len(upstream_calls) == 1
     # Check that upstream hits and local hits are merged
     titles = [b.title for b in outcome.hits]
@@ -233,3 +244,75 @@ async def test_user_rate_limiter_upstream_consumed_cache_not(search_service):
     # But cached search for "rust" succeeds without raising RateLimitedError!
     cached_outcome = await service.search_books("rust", user_id=user_id)
     assert cached_outcome.source == "cache"
+
+
+@pytest.mark.asyncio
+async def test_empty_result_cache_short_ttl(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    def mock_empty(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<table><tr><th>Title</th></tr></table>")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_empty))
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        user_rate_limiter=UserRateLimiter(5, 0.5),
+        http_client=client,
+    )
+
+    t_before = time.time()
+    outcome = await service.search_books("nonexistent_rare_query_xyz", user_id=1001)
+    assert len(outcome.hits) == 0
+
+    cached = await db.get_search_cache("nonexistent_rare_query_xyz")
+    assert cached is not None
+    assert cached.book_ids == []
+    # Empty cache TTL should be close to empty_result_cache_ttl (300s), not 3600s
+    remaining_ttl = cached.expires_at - t_before
+    assert 290 <= remaining_ttl <= 310
+
+
+@pytest.mark.asyncio
+async def test_relaxed_query_fallback_on_zero_hits(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    # If query is strict, return empty table; if query is relaxed, return a hit
+    mock_hit_html = """
+    <table>
+      <tr><th>Title</th><th>Author</th><th>Col3</th><th>Year</th><th>Lang</th><th>Col5</th><th>Size</th><th>Ext</th><th>Mirrors</th></tr>
+      <tr><td>Rust Programming</td><td>Steve Klabnik</td><td>c</td><td>2021</td><td>EN</td><td>c</td><td>2 MB</td><td>pdf</td><td><a href="ads.php?md5=7a7ef891b9d2b2ae8d9cd864556f7cd8">1</a></td></tr>
+    </table>
+    """
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url).lower()
+        if "practice" in url_str and "the" in url_str:
+            # Strict query with stop words produces 0 hits
+            return httpx.Response(200, text="<table><tr><th>Title</th></tr></table>")
+        # Relaxed query without stop words produces hits
+        return httpx.Response(200, text=mock_hit_html)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        user_rate_limiter=UserRateLimiter(5, 0.5),
+        http_client=client,
+    )
+
+    # "The Rust in Practice" relaxes by removing "the" and "in" -> "rust practice"
+    outcome = await service.search_books("The Rust in Practice", user_id=1001)
+    assert len(outcome.hits) > 0
+    assert outcome.is_relaxed is True
+

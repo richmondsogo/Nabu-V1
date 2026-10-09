@@ -75,3 +75,71 @@ def test_row_without_md5():
     assert hit.author == "Jane Doe"
     assert hit.md5 is None
     assert hit.detail_url is None
+
+
+def test_search_url_pagination():
+    m_li = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    m_is = Mirror(id=2, source="libgen", url="https://libgen.is", fork="is")
+
+    url_li_p1 = li_parser.search_url(m_li, "rust", page=1)
+    url_li_p2 = li_parser.search_url(m_li, "rust", page=2)
+    assert "page=2" in url_li_p2
+    assert "page=" not in url_li_p1
+
+    url_is_p1 = is_parser.search_url(m_is, "rust", page=1)
+    url_is_p2 = is_parser.search_url(m_is, "rust", page=2)
+    assert "page=2" in url_is_p2
+    assert "page=" not in url_is_p1
+
+
+def test_missing_optional_fields_parsing():
+    # Test li_parser with missing year, language, extension, size
+    fake_html_li = """
+    <table>
+      <tr>
+        <td>Minimal Book</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td><a href="ads.php?md5=abcdef1234567890abcdef1234567890">1</a></td>
+      </tr>
+    </table>
+    """
+    mirror_li = Mirror(id=1, source="libgen", url="https://libgen.li", fork="li")
+    hits_li = li_parser.parse(fake_html_li, mirror_li)
+    assert len(hits_li) == 1
+    assert hits_li[0].title == "Minimal Book"
+    assert hits_li[0].author is None
+    assert hits_li[0].year is None
+    assert hits_li[0].md5 == "abcdef1234567890abcdef1234567890"
+
+    # Test is_parser with missing optional fields
+    fake_html_is = """
+    <table>
+      <tr bgcolor="#C0C0C0"><td>ID</td><td>Author</td><td>Title</td><td>Publisher</td><td>Year</td><td>Pages</td><td>Language</td><td>Size</td><td>Extension</td><td>Mirrors</td></tr>
+      <tr>
+        <td>1</td>
+        <td></td>
+        <td><a href="book/index.php?md5=11223344556677889900aabbccddeeff">Sparse Is Book</a></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td><a href="http://libgen.is/get.php?md5=11223344556677889900aabbccddeeff">[1]</a></td>
+      </tr>
+    </table>
+    """
+    mirror_is = Mirror(id=2, source="libgen", url="https://libgen.is", fork="is")
+    hits_is = is_parser.parse(fake_html_is, mirror_is)
+    assert len(hits_is) == 1
+    assert hits_is[0].title == "Sparse Is Book"
+    assert hits_is[0].author is None
+    assert hits_is[0].year is None
+    assert hits_is[0].md5 == "11223344556677889900aabbccddeeff"
+

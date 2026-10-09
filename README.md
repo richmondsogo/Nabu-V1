@@ -230,12 +230,16 @@ All configuration settings load from environment variables or a local `.env` fil
 | `TELEGRAM_ALLOWED_USER_IDS` | string | *Required* | Comma-separated list of numeric Telegram user IDs permitted to use the bot. |
 | `DB_PATH` | path | `data/books.db` | File path for the SQLite database. |
 | `LOCAL_RESULT_THRESHOLD` | integer | `3` | Minimum number of local FTS catalog hits required before skipping upstream scraping. |
-| `SEARCH_CACHE_TTL` | float | `86400.0` | Cache time-to-live for search queries, in seconds (default: 24 hours). |
+| `SEARCH_CACHE_TTL` | float | `86400.0` | Cache time-to-live for populated search queries, in seconds (default: 24 hours). |
+| `EMPTY_RESULT_CACHE_TTL` | float | `300.0` | Cache time-to-live for empty search queries (0 hits), in seconds (default: 5 minutes). |
 | `MAX_UPSTREAM` | integer | `4` | Maximum number of concurrent outbound HTTP requests. |
 | `POLITE_DELAY_MS` | integer | `750` | Minimum delay in milliseconds between requests to the same mirror host. |
 | `CONNECT_TIMEOUT` | float | `8.0` | Socket connection timeout in seconds for upstream requests. |
 | `SINGLEFLIGHT_TIMEOUT` | float | `15.0` | Overall timeout in seconds for in-flight search deduplication tasks. |
-| `RESULT_LIMIT` | integer | `5` | Maximum number of search results returned per query. |
+| `RESULT_LIMIT` | integer | `50` | Maximum number of search results returned per query. |
+| `UPSTREAM_MAX_RESULTS` | integer | `50` | Maximum number of results collected from upstream scrapes. |
+| `UPSTREAM_MAX_PAGES` | integer | `3` | Maximum number of pagination pages fetched per upstream query. |
+| `PAGE_SIZE` | integer | `8` | Number of results displayed per inline pagination page in Telegram. |
 | `USER_BUCKET_TOKENS` | float | `5.0` | Maximum token bucket burst capacity for upstream search requests per user. |
 | `USER_BUCKET_REFILL` | float | `0.5` | Refill rate in tokens per second for user rate limiting. |
 | `REFRESH_COOLDOWN` | float | `300.0` | Minimum cooldown in seconds between manual result refreshes on the same query. |

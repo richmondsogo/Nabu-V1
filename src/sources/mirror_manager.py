@@ -69,7 +69,8 @@ class MirrorManager:
                 await self.record_result(mirror.url, False, error=f"HTTP {resp.status_code}")
                 return False
         except Exception as exc:
-            await self.record_result(mirror.url, False, error=repr(exc))
+            err_msg = f"{type(exc).__name__}('{exc}')" if str(exc) else repr(exc)
+            await self.record_result(mirror.url, False, error=err_msg)
             return False
 
     async def probe_all(self, source: str = "libgen", client: httpx.AsyncClient | None = None) -> None:
@@ -91,7 +92,7 @@ class MirrorManager:
                 if close_client:
                     await client.aclose()
         except Exception as e:
-            logger.warning("[MirrorManager] Error during mirror probe: %s", e)
+            logger.warning("[MirrorManager] Error during mirror probe: %r", e)
 
     def startup_probe(self, client: httpx.AsyncClient | None = None) -> asyncio.Task:
         """Launch background health check on startup. Never blocks boot."""
@@ -101,6 +102,7 @@ class MirrorManager:
         self,
         md5: str,
         client: httpx.AsyncClient | None = None,
+        timeout: float = 4.0,
     ) -> str | None:
         """Resolve a temporary direct download link from the healthiest active li-fork mirror.
 
@@ -118,11 +120,11 @@ class MirrorManager:
             all_mirrors = await self.db.get_all_mirrors("libgen")
             li_mirrors = [m for m in all_mirrors if m.fork == "li"]
         if not li_mirrors:
-            li_mirrors = [Mirror(url="https://libgen.li", fork="li", source="libgen", enabled=True)]
+            li_mirrors = [Mirror(id=0, url="https://libgen.li", fork="li", source="libgen", enabled=True)]
 
         close_client = False
         if client is None:
-            client = httpx.AsyncClient(timeout=httpx.Timeout(self.connect_timeout, connect=self.connect_timeout))
+            client = httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=min(2.5, timeout)))
             close_client = True
 
         try:
@@ -133,6 +135,7 @@ class MirrorManager:
                         ads_url,
                         headers={"User-Agent": USER_AGENT},
                         follow_redirects=True,
+                        timeout=httpx.Timeout(timeout, connect=min(2.5, timeout)),
                     )
                     if resp.status_code == 200:
                         from sources.libgen import extract_get_link
@@ -141,7 +144,7 @@ class MirrorManager:
                         if get_link:
                             return get_link
                 except Exception as exc:
-                    logger.debug("[MirrorManager] Direct link extraction failed on %s: %s", mirror.url, exc)
+                    logger.debug("[MirrorManager] Direct link extraction failed on %s: %r", mirror.url, exc)
                     continue
             return None
         finally:

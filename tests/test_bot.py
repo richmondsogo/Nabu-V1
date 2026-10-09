@@ -340,4 +340,64 @@ def test_httpx_logging_silenced():
     assert logging.getLogger("httpcore").level >= logging.WARNING
 
 
+@pytest.mark.asyncio
+async def test_error_handler_notifies_user_on_message():
+    from bot import error_handler
+    from telegram import Update
+
+    update = MagicMock(spec=Update)
+    update.effective_message.reply_text = AsyncMock()
+    update.callback_query = None
+
+    context = MagicMock()
+    context.error = RuntimeError("Simulated crash")
+
+    await error_handler(update, context)
+    update.effective_message.reply_text.assert_called_once_with(
+        "⚠️ An unexpected error occurred. Please try again."
+    )
+
+
+@pytest.mark.asyncio
+async def test_error_handler_notifies_user_on_callback():
+    from bot import error_handler
+    from telegram import Update
+
+    update = MagicMock(spec=Update)
+    update.effective_message = None
+    update.callback_query.answer = AsyncMock()
+
+    context = MagicMock()
+    context.error = RuntimeError("Callback error")
+
+    await error_handler(update, context)
+    update.callback_query.answer.assert_called_once_with(
+        "⚠️ An error occurred. Please try again.", show_alert=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_callback_malformed_arguments_handled_gracefully(mock_config: Config, mock_db: Database):
+    update = MagicMock()
+    query = update.callback_query
+    query.from_user.id = 1001
+    query.answer = AsyncMock()
+    query.message.reply_text = AsyncMock()
+
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "db": mock_db, "search_service": MagicMock()}
+
+    # Non-integer book id
+    query.data = "book:notanumber"
+    await handle_callback(update, context)
+    query.answer.assert_called_once()
+    query.message.reply_text.assert_not_called()
+
+    # Non-integer page id
+    query.answer.reset_mock()
+    query.data = "page:dummyqh:notanumber"
+    await handle_callback(update, context)
+    query.answer.assert_called_once()
+
+
 

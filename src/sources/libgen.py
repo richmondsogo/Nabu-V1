@@ -15,9 +15,29 @@ from urllib.parse import quote_plus
 import httpx
 
 from models import Mirror, SearchHit
-from sources.base import SourceParser
+from sources.base import SourceParser, UpstreamInvalidResponseError
 
 logger = logging.getLogger(__name__)
+
+_CHALLENGE_PATTERNS = (
+    "welcome to nginx",
+    "attention required! | cloudflare",
+    "just a moment...",
+    "cf-browser-verification",
+    "ddos-guard",
+)
+
+
+def _check_challenge_page(html_text: str, mirror: Mirror) -> None:
+    """Detect upstream error or challenge pages and raise UpstreamInvalidResponseError."""
+    if not html_text:
+        return
+    lower_sample = html_text[:2000].lower()
+    for pattern in _CHALLENGE_PATTERNS:
+        if pattern in lower_sample:
+            raise UpstreamInvalidResponseError(
+                f"Mirror {mirror.url} returned challenge or default page: {pattern!r}"
+            )
 
 
 def parse_size(size_str: str | None) -> int | None:
@@ -112,13 +132,14 @@ class LiForkParser:
         q = quote_plus(query)
         base = mirror.url.rstrip("/")
         page_param = f"&page={page}" if page > 1 else ""
-        return f"{base}/index.php?req={q}&columns%5B%5D=t&columns%5B%5D=a&objects%5B%5D=f&topics%5B%5D=l&res=25{page_param}"
+        return f"{base}/index.php?req={q}&columns%5B%5D=t&columns%5B%5D=a&objects%5B%5D=f&topics%5B%5D=l&topics%5B%5D=c&topics%5B%5D=f&res=25{page_param}"
 
     def detail_url(self, mirror: Mirror, md5: str) -> str:
         base = mirror.url.rstrip("/")
         return f"{base}/ads.php?md5={md5}"
 
     def parse(self, html: str, mirror: Mirror) -> list[SearchHit]:
+        _check_challenge_page(html, mirror)
         hits: list[SearchHit] = []
         row_pattern = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
         rows = row_pattern.findall(html)
@@ -131,7 +152,7 @@ class LiForkParser:
                 # Obvious non-data rows (e.g. ad banners, switches, empty spacers)
                 continue
             if len(cols) < 8:
-                logger.warning("Skipping li-fork row with insufficient columns (%d < 8): %s", len(cols), row[:80])
+                logger.debug("Skipping li-fork row with insufficient columns (%d < 8): %s", len(cols), row[:80])
                 continue
 
             try:
@@ -160,11 +181,15 @@ class LiForkParser:
                 if extension and "/" in extension:
                     extension = extension.split("/")[0].strip()
 
-                # MD5 extraction from any href in the row (e.g. ads.php?md5=... or edition.php)
+                # MD5 extraction: prioritize ads.php?md5= or get.php?md5= hrefs first
                 md5 = None
-                md5_matches = re.findall(r"[a-fA-F0-9]{32}", row)
-                if md5_matches:
-                    md5 = md5_matches[0].lower()
+                md5_param_match = re.search(r"(?:ads\.php\?md5=|get\.php\?md5=)([a-fA-F0-9]{32})", row, re.IGNORECASE)
+                if md5_param_match:
+                    md5 = md5_param_match.group(1).lower()
+                else:
+                    md5_matches = re.findall(r"[a-fA-F0-9]{32}", row)
+                    if md5_matches:
+                        md5 = md5_matches[0].lower()
 
                 detail = self.detail_url(mirror, md5) if md5 else None
 
@@ -202,6 +227,7 @@ class IsForkParser:
         return f"{base}/book/index.php?md5={md5}"
 
     def parse(self, html: str, mirror: Mirror) -> list[SearchHit]:
+        _check_challenge_page(html, mirror)
         hits: list[SearchHit] = []
         row_pattern = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
         rows = row_pattern.findall(html)

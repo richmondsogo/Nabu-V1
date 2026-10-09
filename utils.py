@@ -209,6 +209,21 @@ class CandidateCache:
             return hits[index]
         return None
 
+    def get_all(self, user_id: int, token: str) -> list[SearchHit] | None:
+        """Retrieve all hits for a user_id and token.
+
+        Returns None if expired or missing.
+        """
+        key = (user_id, token)
+        item = self._cache.get(key)
+        if not item:
+            return None
+        hits, expires_at = item
+        if time.monotonic() > expires_at:
+            self._cache.pop(key, None)
+            return None
+        return list(hits)
+
     def sweep(self) -> int:
         """Remove expired tokens from cache. Returns count of purged entries."""
         now = time.monotonic()

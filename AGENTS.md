@@ -13,8 +13,18 @@ The standard development loop is defined in [`BUILD_PROTOCOL.md`](./BUILD_PROTOC
 The short form:
 
 ```
-Understand → Plan → Approve → Implement → Verify → Review diff → Record → Checkpoint
+Branch → Understand → Plan → Approve → Implement (granular commits) → Verify → Review diff → Record → PR & Merge
 ```
+
+---
+
+## Branch and Pull Request Workflow
+
+Every step or task MUST follow this workflow:
+1. **Dedicated Branch**: Never develop directly on `master`. Every step must be executed on its own feature branch (e.g., `feat/step-15-db-and-resource-lifecycle`).
+2. **Granular Commits**: Do not make a single monolithic commit at the end. Make plenty of meaningful, granular commits under the branch as progress is achieved (e.g. schema/helpers, implementation, tests, step log).
+3. **Dedicated Pull Request**: Every step must have its own Pull Request (PR) opened against `master`.
+4. **Merge to Master**: The step branch is only merged into `master` after full verification (`pytest`, diff inspection) is complete.
 
 ---
 

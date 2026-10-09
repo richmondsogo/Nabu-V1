@@ -37,13 +37,15 @@ These roles can be held by the same agent within a single conversation, or split
 ## The standard loop
 
 ```
+Branch
+    ↓
 Understand
     ↓
 Plan
     ↓
 Approve
     ↓
-Implement
+Implement (granular commits)
     ↓
 Verify
     ↓
@@ -51,8 +53,10 @@ Review diff
     ↓
 Record
     ↓
-Checkpoint
+PR & Merge
 ```
+
+**Branch** — Create a dedicated feature branch for the step (never commit implementation directly to master).
 
 **Understand** — Read existing code, documentation, and constraints before forming an opinion.
 
@@ -60,7 +64,7 @@ Checkpoint
 
 **Approve** — Confirm the plan with the human before modifying files.
 
-**Implement** — Execute the approved plan. One scope at a time.
+**Implement** — Execute the approved plan. Make granular, meaningful commits under the branch as milestones are reached.
 
 **Verify** — Run tests, checks, and visual inspection. Do not skip this.
 
@@ -68,7 +72,7 @@ Checkpoint
 
 **Record** — Update or create the relevant step log in `docs/steps/`. Record discoveries and decisions.
 
-**Checkpoint** — Commit with a clear, descriptive message.
+**PR & Merge** — Open a dedicated Pull Request for the step branch, verify CI/checks, and merge into master.
 
 ---
 

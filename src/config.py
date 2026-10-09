@@ -26,12 +26,16 @@ class Config:
     db_path: Path
     # Link Resolver settings
     local_result_threshold: int = 3
-    search_cache_ttl: float = 86400.0
+    search_cache_ttl: float = 43200.0  # 12 hours
     max_upstream: int = 4
     polite_delay_ms: int = 750
     connect_timeout: float = 8.0
     singleflight_timeout: float = 15.0
-    result_limit: int = 5
+    result_limit: int = 50
+    upstream_max_results: int = 50
+    upstream_max_pages: int = 3
+    page_size: int = 8
+    empty_result_cache_ttl: float = 300.0
     user_bucket_tokens: float = 5.0
     user_bucket_refill: float = 0.5
     refresh_cooldown: float = 300.0
@@ -158,12 +162,27 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
 
     # Link Resolver config items
     local_result_threshold = _parse_int(raw_env.get("LOCAL_RESULT_THRESHOLD"), "LOCAL_RESULT_THRESHOLD", 3)
-    search_cache_ttl = _parse_float(raw_env.get("SEARCH_CACHE_TTL"), "SEARCH_CACHE_TTL", 86400.0)
+    search_cache_ttl = _parse_float(raw_env.get("SEARCH_CACHE_TTL"), "SEARCH_CACHE_TTL", 43200.0)
     max_upstream = _parse_int(raw_env.get("MAX_UPSTREAM"), "MAX_UPSTREAM", 4)
     polite_delay_ms = _parse_int(raw_env.get("POLITE_DELAY_MS"), "POLITE_DELAY_MS", 750, min_val=0)
     connect_timeout = _parse_float(raw_env.get("CONNECT_TIMEOUT"), "CONNECT_TIMEOUT", 8.0)
     singleflight_timeout = _parse_float(raw_env.get("SINGLEFLIGHT_TIMEOUT"), "SINGLEFLIGHT_TIMEOUT", 15.0)
-    result_limit = _parse_int(raw_env.get("RESULT_LIMIT"), "RESULT_LIMIT", 5)
+
+    # Result count & pagination settings
+    raw_res_limit = raw_env.get("RESULT_LIMIT")
+    default_max_results = 50
+    if raw_res_limit is not None and raw_res_limit.strip():
+        default_max_results = _parse_int(raw_res_limit, "RESULT_LIMIT", 50)
+    upstream_max_results = _parse_int(
+        raw_env.get("UPSTREAM_MAX_RESULTS"), "UPSTREAM_MAX_RESULTS", default_max_results
+    )
+    upstream_max_pages = _parse_int(raw_env.get("UPSTREAM_MAX_PAGES"), "UPSTREAM_MAX_PAGES", 3)
+    page_size = _parse_int(raw_env.get("PAGE_SIZE"), "PAGE_SIZE", 8)
+    empty_result_cache_ttl = _parse_float(
+        raw_env.get("EMPTY_RESULT_CACHE_TTL"), "EMPTY_RESULT_CACHE_TTL", 300.0
+    )
+    result_limit = upstream_max_results
+
     user_bucket_tokens = _parse_float(raw_env.get("USER_BUCKET_TOKENS"), "USER_BUCKET_TOKENS", 5.0)
     user_bucket_refill = _parse_float(raw_env.get("USER_BUCKET_REFILL"), "USER_BUCKET_REFILL", 0.5)
     refresh_cooldown = _parse_float(raw_env.get("REFRESH_COOLDOWN"), "REFRESH_COOLDOWN", 300.0)
@@ -204,6 +223,10 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
         connect_timeout=connect_timeout,
         singleflight_timeout=singleflight_timeout,
         result_limit=result_limit,
+        upstream_max_results=upstream_max_results,
+        upstream_max_pages=upstream_max_pages,
+        page_size=page_size,
+        empty_result_cache_ttl=empty_result_cache_ttl,
         user_bucket_tokens=user_bucket_tokens,
         user_bucket_refill=user_bucket_refill,
         refresh_cooldown=refresh_cooldown,

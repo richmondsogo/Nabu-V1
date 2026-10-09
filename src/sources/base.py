@@ -9,8 +9,8 @@ from models import Mirror, SearchHit
 class SourceParser(Protocol):
     """Protocol for parsing mirror HTML search results and building URLs."""
 
-    def search_url(self, mirror: Mirror, query: str) -> str:
-        """Construct search URL for this mirror and query."""
+    def search_url(self, mirror: Mirror, query: str, page: int = 1) -> str:
+        """Construct search URL for this mirror, query, and page number."""
         ...
 
     def detail_url(self, mirror: Mirror, md5: str) -> str:

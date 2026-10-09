@@ -103,3 +103,13 @@ def test_load_config_bad_mirror_url():
     }
     with pytest.raises(ConfigError, match="MIRROR_ANNA must be a valid http or https URL"):
         load_config(env=env)
+
+
+def test_load_config_search_cache_ttl_12h_default():
+    env = {
+        "TELEGRAM_TOKEN": "valid_token",
+        "TELEGRAM_ALLOWED_USER_IDS": "111",
+    }
+    cfg = load_config(env=env)
+    assert cfg.search_cache_ttl == 43200.0  # 12 hours
+

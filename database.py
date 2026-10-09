@@ -537,9 +537,59 @@ class Database:
             finished=finished,
         )
 
+    def _get_acquisition_sync(self, acq_id: int) -> dict[str, Any] | None:
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM acquisitions WHERE id = ?", (acq_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    async def get_acquisition(self, acq_id: int) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_acquisition_sync, acq_id)
+
+    def _get_user_active_acquisitions_sync(self, user_id: int) -> list[dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM acquisitions
+                WHERE requested_by = ? AND finished_at IS NULL
+                ORDER BY id DESC
+                """,
+                (user_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    async def get_user_active_acquisitions(self, user_id: int) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._get_user_active_acquisitions_sync, user_id)
+
+    def _get_pending_acquisition_by_md5_sync(self, md5: str) -> dict[str, Any] | None:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM acquisitions
+                WHERE md5 = ? AND finished_at IS NULL
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (md5,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    async def get_pending_acquisition_by_md5(self, md5: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_pending_acquisition_by_md5_sync, md5)
+
     # -------------------------------------------------------------------------
     # Sources Table & Health Tracking
     # -------------------------------------------------------------------------
+
+    def _get_source_sync(self, name: str) -> dict[str, Any] | None:
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM sources WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    async def get_source(self, name: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_source_sync, name)
 
     def _get_sources_sync(self) -> list[dict[str, Any]]:
         with self._get_connection() as conn:

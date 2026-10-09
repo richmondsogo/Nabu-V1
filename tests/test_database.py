@@ -282,3 +282,22 @@ async def test_async_database_operations(tmp_path: Path):
     await db.rebuild_fts()
     hits_after = await db.search_books("Async Python")
     assert len(hits_after) == 1
+
+    # Test acquisition queries
+    acq_id = await db.create_acquisition(source="annas", requested_by=999, md5="md5_async")
+    acq = await db.get_acquisition(acq_id)
+    assert acq is not None
+    assert acq["source"] == "annas"
+
+    user_acqs = await db.get_user_active_acquisitions(999)
+    assert len(user_acqs) == 1
+    assert user_acqs[0]["id"] == acq_id
+
+    pending_md5 = await db.get_pending_acquisition_by_md5("md5_async")
+    assert pending_md5 is not None
+    assert pending_md5["id"] == acq_id
+
+    # Test source lookup
+    src = await db.get_source("annas")
+    assert src is not None
+    assert src["name"] == "annas"

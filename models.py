@@ -97,3 +97,5 @@ class AcquisitionJob:
     source: str | None = None
     status: AcquisitionStatus = "queued"
     error: str | None = None
+    acq_id: int | None = None
+    hit: SearchHit | None = None

@@ -199,6 +199,22 @@ async def test_callback_hit_with_no_md5_renders_without_links(mock_config: Confi
 
 
 @pytest.mark.asyncio
+async def test_post_init_launches_startup_probe():
+    from bot import post_init
+
+    mock_app = MagicMock()
+    mock_mm = MagicMock()
+    fake_task = asyncio.create_task(asyncio.sleep(0.01))
+    mock_mm.startup_probe.return_value = fake_task
+    mock_app.bot_data = {"mirror_manager": mock_mm}
+
+    await post_init(mock_app)
+    assert mock_app.bot_data["startup_probe_task"] is fake_task
+    mock_mm.startup_probe.assert_called_once()
+    await fake_task
+
+
+@pytest.mark.asyncio
 async def test_post_shutdown_cancels_background_tasks():
     from bot import post_shutdown
 
@@ -208,3 +224,4 @@ async def test_post_shutdown_cancels_background_tasks():
 
     await post_shutdown(mock_app)
     assert mock_task.cancelled() or mock_task.done()
+

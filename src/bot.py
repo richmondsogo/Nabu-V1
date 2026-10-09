@@ -362,6 +362,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # Application Factory & Lifecycle
 # -----------------------------------------------------------------------------
 
+async def post_init(application: Application) -> None:
+    """Launch background mirror probe once the event loop is active."""
+    mirror_manager: MirrorManager | None = application.bot_data.get("mirror_manager")
+    if mirror_manager:
+        application.bot_data["startup_probe_task"] = mirror_manager.startup_probe()
+
+
 async def post_shutdown(application: Application) -> None:
     """Clean up background tasks on application shutdown to ensure zero orphaned tasks."""
     task: asyncio.Task | None = application.bot_data.get("startup_probe_task")
@@ -401,6 +408,7 @@ def build_application(config: Config) -> Application:
     app = (
         ApplicationBuilder()
         .token(config.telegram_token)
+        .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
     )
@@ -437,10 +445,6 @@ def main() -> None:
         sys.exit(1)
 
     app = build_application(config)
-
-    # Launch background mirror probe and track task for graceful shutdown
-    mirror_manager: MirrorManager = app.bot_data["mirror_manager"]
-    app.bot_data["startup_probe_task"] = mirror_manager.startup_probe()
 
     logger.info("Starting Nabu Telegram bot polling...")
     app.run_polling(drop_pending_updates=True)

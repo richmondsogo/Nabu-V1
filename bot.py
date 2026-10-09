@@ -1,28 +1,27 @@
-"""Main Telegram bot application for Nabu-V1.
+"""Telegram Link Resolver Bot for Nabu-V1.
 
-Implements:
-- Telegram ApplicationBuilder using native asyncio
-- Whitelist authorization check inside every handler
-- Commands: /start, /help, /queue, /status, /get, /fetch, /sources, /acquire, /rebuild
-- Plain text messages interpreted as catalog book searches with automatic shadow library acquisition
-- Compact inline keyboard callbacks (book:<id>, web:<token>)
-- 3-worker delivery pipeline streaming from local Kubo, validating magic bytes,
-  enforcing 50 MB limits, and guaranteeing temp file cleanup
-- 2-worker acquisition manager orchestrating shadow library resolution and ingestion
+Implements high-throughput, zero-storage book discovery and link resolution:
+- Whitelist authorization inside every handler.
+- Cache-first search with bounded upstream SingleFlight.
+- Instant callback resolution with multi-mirror links built purely from MD5.
+- HTML parse mode with robust escaping.
+- Health reporting and maintenance commands (/start, /help, /status, /mirrors, /rebuild).
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
-from pathlib import Path
 import sys
+import time
 
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
 )
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -33,740 +32,395 @@ from telegram.ext import (
     filters,
 )
 
-from acquirer import AcquisitionManager
+from concurrency import HostRateLimiter, SingleFlight, UserRateLimiter, create_global_semaphore
 from config import Config, load_config
 from database import Database
-from ipfs import (
-    KuboClient,
-    KuboOfflineError,
-    KuboTimeoutError,
-    OversizeFileError,
-)
-from models import DownloadJob
-from queue_manager import QueueManager
-from sources.annas import AnnasSource
-from sources.libgen import LibgenSource
-from sources.resolver import SourceResolver
-from utils import (
-    build_delivery_filename,
-    candidates,
-    decode_callback,
-    encode_callback,
-    format_caption,
-    format_file_size,
-    get_user_error,
-    is_plausible_book_file,
-)
+from models import Book, SearchOutcome
+from search import AllMirrorsFailed, RateLimitedError, SearchService, normalize_query
+from sources.mirror_manager import MirrorManager
+from utils import build_links, decode_callback, encode_callback, escape, format_file_size
 
 logger = logging.getLogger(__name__)
 
+# Registry for search query hashes used in refresh button callbacks:
+# qhash -> (raw_query, last_refreshed_at)
+_query_registry: dict[str, tuple[str, float]] = {}
+
+# Hit / miss counters for /status
+_stats = {
+    "cache_hits": 0,
+    "local_hits": 0,
+    "upstream_requests": 0,
+}
+
+
+def _qhash(query: str) -> str:
+    """Generate compact 8-character hash for search queries."""
+    qn = normalize_query(query)
+    h = hashlib.sha256(qn.encode("utf-8")).hexdigest()[:8]
+    return h
+
 
 def is_authorized(user_id: int | None, config: Config) -> bool:
-    """Return True if user_id is in the configured whitelist."""
+    """Check if user_id is in the configured whitelist."""
     return user_id is not None and user_id in config.allowed_user_ids
 
 
 async def reject_unauthorized(update: Update) -> None:
-    """Reply with the standard private bot rejection message."""
+    """Send private bot rejection message with zero data leakage."""
+    msg = "Sorry, this bot is private."
     if update.effective_message:
-        await update.effective_message.reply_text(get_user_error("unauthorized"))
+        await update.effective_message.reply_text(msg)
     elif update.callback_query:
-        await update.callback_query.answer(get_user_error("unauthorized"), show_alert=True)
+        await update.callback_query.answer(msg, show_alert=True)
 
 
 # -----------------------------------------------------------------------------
-# Worker Download Processor
+# Handlers: Commands
 # -----------------------------------------------------------------------------
 
-def create_download_processor(
-    app: Application,
-    db: Database,
-    kubo: KuboClient,
-    config: Config,
-):
-    """Factory returning the async handler executed by delivery queue workers."""
-
-    async def process_download(job: DownloadJob) -> None:
-        book = await db.get_book_by_id(job.book_id)
-        if not book:
-            logger.error("Job %s referenced non-existent book_id %d", job.job_id, job.book_id)
-            await app.bot.send_message(
-                chat_id=job.chat_id,
-                text="⚠️ Book record could not be found in the catalog.",
-            )
-            return
-
-        if not book.cid:
-            await app.bot.send_message(
-                chat_id=job.chat_id,
-                text=get_user_error("missing_cid"),
-            )
-            return
-
-        tmp_file = config.temp_dir / f"{job.job_id}.part"
-        config.temp_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            logger.info("Starting Kubo retrieval for CID %s (job %s)", book.cid, job.job_id)
-            bytes_written = await kubo.cat_file(
-                cid=book.cid,
-                dest_path=tmp_file,
-                max_bytes=config.max_telegram_file_size,
-                timeout=config.download_timeout,
-            )
-
-            # Inspect magic bytes before delivery
-            valid, detected_or_reason = is_plausible_book_file(tmp_file, expected_ext=book.file_type)
-            if not valid:
-                logger.warning(
-                    "Job %s file failed validation: %s (CID: %s)",
-                    job.job_id,
-                    detected_or_reason,
-                    book.cid,
-                )
-                await db.record_fetch_failure(book.id, f"Invalid format: {detected_or_reason}")
-                await app.bot.send_message(
-                    chat_id=job.chat_id,
-                    text=get_user_error("file_corrupt"),
-                )
-                return
-
-            ext = detected_or_reason if detected_or_reason not in ("zip", "unknown") else (book.file_type or "pdf")
-            delivery_filename = build_delivery_filename(book.title, book.author, ext)
-            caption = format_caption(book.title, book.author, bytes_written)
-
-            logger.info("Uploading %s (%d bytes) to chat %d", delivery_filename, bytes_written, job.chat_id)
-            with open(tmp_file, "rb") as doc_file:
-                await app.bot.send_document(
-                    chat_id=job.chat_id,
-                    document=doc_file,
-                    filename=delivery_filename,
-                    caption=caption,
-                    write_timeout=120.0,
-                    read_timeout=120.0,
-                )
-            logger.info("Delivery of job %s succeeded", job.job_id)
-
-        except OversizeFileError:
-            logger.warning("Job %s aborted: file exceeded Telegram 50 MB limit", job.job_id)
-            await app.bot.send_message(chat_id=job.chat_id, text=get_user_error("too_large"))
-        except KuboTimeoutError:
-            logger.error("Job %s aborted: Kubo retrieval timed out after %ds", job.job_id, config.download_timeout)
-            await db.record_fetch_failure(book.id, "Kubo retrieval timed out")
-            await app.bot.send_message(chat_id=job.chat_id, text=get_user_error("kubo_timeout"))
-        except KuboOfflineError:
-            logger.error("Job %s aborted: Kubo daemon is offline", job.job_id)
-            await app.bot.send_message(chat_id=job.chat_id, text=get_user_error("kubo_offline"))
-        except Exception as exc:
-            logger.exception("Unexpected error during delivery for job %s: %s", job.job_id, exc)
-            await db.record_fetch_failure(book.id, str(exc))
-            await app.bot.send_message(chat_id=job.chat_id, text=get_user_error("telegram_upload_error"))
-        finally:
-            # Guarantees zero orphaned temporary files on all paths
-            if tmp_file.exists():
-                try:
-                    tmp_file.unlink()
-                except OSError as e:
-                    logger.warning("Failed to unlink temp file %s: %s", tmp_file, e)
-
-    return process_download
-
-
-# -----------------------------------------------------------------------------
-# Telegram Command Handlers
-# -----------------------------------------------------------------------------
-
-async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: Config = context.bot_data["config"]
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
+    user_id = update.effective_user.id if update.effective_user else None
+    if not is_authorized(user_id, config):
         await reject_unauthorized(update)
         return
 
-    text = (
-        "📚 *Welcome to Nabu*\n\n"
-        "I can search and deliver books directly to Telegram.\n\n"
-        "• Send any title or author to search the library.\n"
-        "• `/queue` — View download queue status.\n"
-        "• `/status` — View system and Kubo health.\n"
-        "• `/get <query>` — Force shadow library search and acquisition.\n"
-        "• `/fetch <book_id>` — Fetch a local catalog book with no CID.\n"
-        "• `/sources` — View shadow library status.\n"
-        "• `/acquire` — View your active acquisitions.\n"
-        "• `/rebuild` — Rebuild search index.\n"
-        "• `/help` — Search tips."
+    welcome_text = (
+        "📚 <b>Welcome to Nabu</b>\n\n"
+        "Send me any book title or author to search.\n"
+        "Tap a result to receive direct browser download links.\n\n"
+        "<b>Commands:</b>\n"
+        "/status — System health & cache statistics\n"
+        "/mirrors — Upstream mirror status & latencies\n"
+        "/rebuild — Rebuild search index"
     )
     if update.effective_message:
-        await update.effective_message.reply_text(text, parse_mode="Markdown")
+        await update.effective_message.reply_text(welcome_text, parse_mode=ParseMode.HTML)
 
 
-async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config: Config = context.bot_data["config"]
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
-        return
-
-    text = (
-        "🔍 *How to Search*\n\n"
-        "Send plain text with titles, authors, or keywords:\n"
-        "• `clean code`\n"
-        "• `robert martin`\n"
-        "• `design patterns gamma`\n\n"
-        "Tap any result to queue an instant download.\n"
-        "If a book is not in the local library, I will automatically find and acquire it for you!"
-    )
-    if update.effective_message:
-        await update.effective_message.reply_text(text, parse_mode="Markdown")
+async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_start(update, context)
 
 
-async def queue_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config: Config = context.bot_data["config"]
-    queue: QueueManager = context.bot_data["queue"]
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
-        return
-
-    stats = queue.stats()
-    user_jobs = queue.get_user_pending_jobs(user.id) if user else []
-
-    lines = [
-        "📊 *Download Queue Status*",
-        f"Active workers: {stats['active']}/{queue.max_workers}",
-        f"Waiting in queue: {stats['queued']}",
-    ]
-
-    if user_jobs:
-        lines.append("\n*Your pending downloads:*")
-        for j in user_jobs:
-            pos = queue.calculate_position(j.job_id)
-            title = j.title or f"Book #{j.book_id}"
-            lines.append(f"• [Position {pos}] {title}")
-    else:
-        lines.append("\nYou have no active or pending downloads.")
-
-    if update.effective_message:
-        await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-
-async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config: Config = context.bot_data["config"]
-    kubo: KuboClient = context.bot_data["kubo"]
-    queue: QueueManager = context.bot_data["queue"]
-    acquirer: AcquisitionManager | None = context.bot_data.get("acquirer")
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
-        return
-
-    kubo_online = await kubo.is_online()
-    kubo_status = "OK" if kubo_online else "OFFLINE"
-    stats = queue.stats()
-
-    acq_workers = acquirer.max_workers if acquirer else 0
-    acq_completed = acquirer.completed_count if acquirer else 0
-    text = (
-        "🤖 *System Status*\n"
-        "Bot: online\n"
-        "Database: OK\n"
-        f"Kubo: {kubo_status}\n"
-        f"Active downloads: {stats['active']}/{queue.max_workers}\n"
-        f"Queue: {stats['queued']}\n"
-        f"Acquisition workers: {acq_workers}\n"
-        f"Acquisitions completed: {acq_completed}"
-    )
-    if update.effective_message:
-        await update.effective_message.reply_text(text, parse_mode="Markdown")
-
-
-async def get_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Force shadow library search and acquisition."""
-    config: Config = context.bot_data["config"]
-    acquirer: AcquisitionManager | None = context.bot_data.get("acquirer")
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
-        return
-
-    if not acquirer:
-        if update.effective_message:
-            await update.effective_message.reply_text("Acquisition subsystem is not enabled.")
-        return
-
-    query_text = " ".join(context.args or []).strip()
-    if not query_text:
-        if update.effective_message:
-            await update.effective_message.reply_text("Usage: `/get <title or author>`", parse_mode="Markdown")
-        return
-
-    status_msg = await update.effective_message.reply_text(f'🔎 Searching shadow libraries for "{query_text}"…')
-
-    async def update_status(text: str) -> None:
-        try:
-            await status_msg.edit_text(text)
-        except Exception:
-            pass
-
-    chat_id = update.effective_chat.id if update.effective_chat else user.id
-    await acquirer.enqueue(
-        query=query_text,
-        user_id=user.id,
-        chat_id=chat_id,
-        status_callback=update_status,
-    )
-
-
-async def fetch_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Acquire a specific local catalog book that has no CID."""
+async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: Config = context.bot_data["config"]
     db: Database = context.bot_data["db"]
-    queue: QueueManager = context.bot_data["queue"]
-    acquirer: AcquisitionManager | None = context.bot_data.get("acquirer")
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
+    user_id = update.effective_user.id if update.effective_user else None
+    if not is_authorized(user_id, config):
         await reject_unauthorized(update)
         return
 
-    if not acquirer:
-        if update.effective_message:
-            await update.effective_message.reply_text("Acquisition subsystem is not enabled.")
+    mirrors = await db.get_all_mirrors("libgen")
+    active_count = sum(1 for m in mirrors if m.enabled and (m.cooldown_until is None or m.cooldown_until <= time.time()))
+
+    books_cnt = 0
+    with db._get_connection() as conn:
+        row = conn.execute("SELECT count(*) as cnt FROM books").fetchone()
+        books_cnt = row["cnt"] if row else 0
+        cache_row = conn.execute("SELECT count(*) as cnt FROM search_cache").fetchone()
+        cache_cnt = cache_row["cnt"] if cache_row else 0
+
+    status_text = (
+        "📊 <b>Nabu Status</b>\n\n"
+        f"📖 Catalog books: <b>{books_cnt}</b>\n"
+        f"🔍 Cached searches: <b>{cache_cnt}</b>\n"
+        f"🌐 Active mirrors: <b>{active_count}/{len(mirrors)}</b>\n\n"
+        f"⚡ <b>Performance:</b>\n"
+        f"• Cache hits: {_stats['cache_hits']}\n"
+        f"• Local FTS hits: {_stats['local_hits']}\n"
+        f"• Upstream scrapes: {_stats['upstream_requests']}"
+    )
+    if update.effective_message:
+        await update.effective_message.reply_text(status_text, parse_mode=ParseMode.HTML)
+
+
+async def handle_mirrors(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: Config = context.bot_data["config"]
+    db: Database = context.bot_data["db"]
+    user_id = update.effective_user.id if update.effective_user else None
+    if not is_authorized(user_id, config):
+        await reject_unauthorized(update)
         return
 
-    args = context.args or []
-    if not args:
-        if update.effective_message:
-            await update.effective_message.reply_text("Usage: `/fetch <book_id>`", parse_mode="Markdown")
+    mirrors = await db.get_all_mirrors("libgen")
+    now = time.time()
+    lines = ["🌐 <b>Configured Mirrors:</b>\n"]
+    for m in mirrors:
+        status_icon = "🟢" if m.enabled else "🔴"
+        cooldown_str = ""
+        if m.cooldown_until and m.cooldown_until > now:
+            remaining = int(m.cooldown_until - now)
+            status_icon = "🟡"
+            cooldown_str = f" [cooling: {remaining}s]"
+
+        latency_str = f"{m.latency_ms}ms" if m.latency_ms else "unknown"
+        lines.append(
+            f"{status_icon} <b>{escape(m.url)}</b> (fork: {m.fork})\n"
+            f"   Latency: {latency_str} | Failures: {m.fail_count}{cooldown_str}"
+        )
+        if m.last_error:
+            lines.append(f"   <i>Error: {escape(m.last_error[:60])}</i>")
+
+    msg = "\n".join(lines)
+    if update.effective_message:
+        await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+
+async def handle_rebuild(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: Config = context.bot_data["config"]
+    db: Database = context.bot_data["db"]
+    user_id = update.effective_user.id if update.effective_user else None
+    if not is_authorized(user_id, config):
+        await reject_unauthorized(update)
         return
 
     try:
-        book_id = int(args[0])
-    except ValueError:
+        await db.rebuild_fts()
         if update.effective_message:
-            await update.effective_message.reply_text("Invalid book ID.")
-        return
-
-    book = await db.get_book_by_id(book_id)
-    if not book:
+            await update.effective_message.reply_text("✅ Search index rebuilt successfully.")
+    except Exception as exc:
+        logger.error("Failed to rebuild FTS: %s", exc, exc_info=True)
         if update.effective_message:
-            await update.effective_message.reply_text("⚠️ Book not found in catalog.")
-        return
-
-    if book.has_cid:
-        # Already has CID: enqueue directly to delivery queue
-        title = f"{book.title} — {book.author}" if book.author else book.title
-        ok, job, pos, msg = queue.enqueue(
-            user_id=user.id,
-            chat_id=update.effective_chat.id if update.effective_chat else user.id,
-            book_id=book.id,
-            title=title,
-        )
-        if not ok:
-            if update.effective_message:
-                await update.effective_message.reply_text(f"⚠️ {msg}")
-            return
-        if update.effective_message:
-            await update.effective_message.reply_text(f"✅ Book already has CID. Added to delivery queue at position {pos}.")
-        return
-
-    status_msg = await update.effective_message.reply_text(f'🔎 Fetching from shadow libraries for "{book.title}"…')
-
-    async def update_status(text: str) -> None:
-        try:
-            await status_msg.edit_text(text)
-        except Exception:
-            pass
-
-    chat_id = update.effective_chat.id if update.effective_chat else user.id
-    await acquirer.enqueue(
-        query=book.title,
-        user_id=user.id,
-        chat_id=chat_id,
-        md5=book.md5,
-        status_callback=update_status,
-    )
-
-
-async def sources_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Display per-source status."""
-    config: Config = context.bot_data["config"]
-    db: Database = context.bot_data["db"]
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
-        return
-
-    sources = await db.get_sources()
-    lines = ["📚 *Shadow Library Sources*"]
-    for s in sources:
-        enabled = "enabled" if s.get("enabled", 1) else "disabled"
-        last_ok = s.get("last_ok") or "never"
-        last_err = s.get("last_error") or "none"
-        lines.append(f"• *{s['name']}* ({enabled})\n  Last OK: `{last_ok}`\n  Last Error: `{last_err}`")
-
-    if update.effective_message:
-        await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-
-async def acquire_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Display user's active/waiting acquisitions."""
-    config: Config = context.bot_data["config"]
-    acquirer: AcquisitionManager | None = context.bot_data.get("acquirer")
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
-        return
-
-    if not acquirer:
-        if update.effective_message:
-            await update.effective_message.reply_text("Acquisition subsystem is not enabled.")
-        return
-
-    active_job_id = acquirer._user_active.get(user.id)
-    waiting_jobs = acquirer._user_waiting.get(user.id, [])
-
-    lines = ["📥 *Your Acquisitions*"]
-    if active_job_id:
-        lines.append(f"• Active job: `{active_job_id}`")
-    if waiting_jobs:
-        lines.append(f"• Waiting in queue: {len(waiting_jobs)}")
-        for w in waiting_jobs:
-            lines.append(f"  - {w.query}")
-    if not active_job_id and not waiting_jobs:
-        lines.append("You have no active or pending acquisitions.")
-
-    if update.effective_message:
-        await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-
-async def rebuild_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Rebuild the SQLite FTS5 search index."""
-    config: Config = context.bot_data["config"]
-    db: Database = context.bot_data["db"]
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
-        return
-
-    await db.rebuild_fts()
-    if update.effective_message:
-        await update.effective_message.reply_text("✅ Successfully rebuilt the FTS5 catalog search index.")
+            await update.effective_message.reply_text("⚠️ Failed to rebuild search index.")
 
 
 # -----------------------------------------------------------------------------
-# Search & Callback Message Handlers
+# Handlers: Text Search
 # -----------------------------------------------------------------------------
 
-async def search_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def _format_search_keyboard(hits: list[Book], qhash: str) -> InlineKeyboardMarkup:
+    """Construct inline buttons for book results plus a refresh button."""
+    buttons = []
+    for b in hits:
+        author_part = f" — {b.author}" if b.author else ""
+        raw_label = f"{b.title}{author_part}"
+        label = (raw_label[:57] + "...") if len(raw_label) > 60 else raw_label
+        buttons.append([InlineKeyboardButton(label, callback_data=encode_callback("book", b.id))])
+
+    # Append refresh button
+    buttons.append([InlineKeyboardButton("🔄 Refresh from sources", callback_data=encode_callback("refresh", qhash))])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def handle_text_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: Config = context.bot_data["config"]
-    db: Database = context.bot_data["db"]
-    acquirer: AcquisitionManager | None = context.bot_data.get("acquirer")
-    user = update.effective_user
-    if not is_authorized(user.id if user else None, config):
+    search_service: SearchService = context.bot_data["search_service"]
+    user_id = update.effective_user.id if update.effective_user else None
+
+    if not is_authorized(user_id, config):
         await reject_unauthorized(update)
         return
 
-    query_text = (update.effective_message.text or "").strip() if update.effective_message else ""
-    if not query_text:
-        return
-
-    # 1. Search local SQLite catalog
-    hits = await db.search_books(query_text, limit=5)
-
-    if not hits:
-        # Cache query token for manual retry if needed
-        token = candidates.store(user.id if user else 0, [{"query": query_text}])
-
-        if config.auto_acquire and acquirer:
-            status_msg = await update.effective_message.reply_text(
-                f'No books found in local catalog for "{query_text}".\n\n🔎 Searching shadow libraries…'
-            )
-
-            async def update_status(text: str) -> None:
-                try:
-                    await status_msg.edit_text(text)
-                except Exception:
-                    pass
-
-            chat_id = update.effective_chat.id if update.effective_chat else user.id
-            await acquirer.enqueue(
-                query=query_text,
-                user_id=user.id,
-                chat_id=chat_id,
-                status_callback=update_status,
-            )
-            return
-
-        # Auto acquire disabled or no acquirer: present button to search online
-        cb_web = encode_callback("web", token)
-        keyboard = [[InlineKeyboardButton("🌐 Search Anna's Archive and Libgen", callback_data=cb_web)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        if update.effective_message:
-            await update.effective_message.reply_text(
-                f'No books found for "{query_text}".',
-                reply_markup=reply_markup,
-            )
-        return
-
-    # 2. Local hits found: build inline keyboard
-    keyboard: list[list[InlineKeyboardButton]] = []
-    for book in hits:
-        author_str = f" — {book.author}" if book.author else ""
-        button_text = f"{book.title}{author_str}"
-        if len(button_text) > 48:
-            button_text = button_text[:45] + "…"
-        cb_data = encode_callback("book", book.id)
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=cb_data)])
-
-    # If fewer than 5 local hits, offer "More results" from shadow libraries
-    if len(hits) < 5:
-        token = candidates.store(user.id if user else 0, [{"query": query_text}])
-        cb_web = encode_callback("web", token)
-        keyboard.append(
-            [InlineKeyboardButton("🌐 More results from Anna's Archive and Libgen", callback_data=cb_web)]
-        )
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    if update.effective_message:
-        await update.effective_message.reply_text("Search results:", reply_markup=reply_markup)
-
-
-async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
+    query = update.effective_message.text.strip() if update.effective_message and update.effective_message.text else ""
     if not query:
         return
 
-    # Answer immediately to prevent Telegram client timeout
-    await query.answer()
+    qh = _qhash(query)
+    _query_registry[qh] = (query, _query_registry.get(qh, (query, 0.0))[1])
+
+    try:
+        outcome: SearchOutcome = await search_service.search_books(query, user_id=user_id)
+        if outcome.source == "cache":
+            _stats["cache_hits"] += 1
+        elif outcome.source == "local":
+            _stats["local_hits"] += 1
+        elif outcome.source == "upstream":
+            _stats["upstream_requests"] += 1
+
+        if not outcome.hits:
+            if update.effective_message:
+                await update.effective_message.reply_text(f'No books found for "{escape(query)}".', parse_mode=ParseMode.HTML)
+            return
+
+        degraded_note = "\n<i>⚠️ Sources temporarily degraded; showing cached results.</i>" if outcome.degraded else ""
+        text = f"Found {len(outcome.hits)} result(s):{degraded_note}"
+        reply_markup = _format_search_keyboard(outcome.hits, qh)
+
+        if update.effective_message:
+            await update.effective_message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+    except RateLimitedError:
+        if update.effective_message:
+            await update.effective_message.reply_text("Slow down! Please wait a few seconds before searching again.")
+    except AllMirrorsFailed:
+        if update.effective_message:
+            await update.effective_message.reply_text("⚠️ All sources unreachable. Try again later.")
+    except Exception as exc:
+        logger.error("Unhandled error during search for %r: %s", query, exc, exc_info=True)
+        if update.effective_message:
+            await update.effective_message.reply_text("⚠️ An error occurred while searching. Try again later.")
+
+
+# -----------------------------------------------------------------------------
+# Handlers: Callbacks
+# -----------------------------------------------------------------------------
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query or not query.data:
+        return
 
     config: Config = context.bot_data["config"]
     db: Database = context.bot_data["db"]
-    queue: QueueManager = context.bot_data["queue"]
-    acquirer: AcquisitionManager | None = context.bot_data.get("acquirer")
-    user = update.effective_user
+    search_service: SearchService = context.bot_data["search_service"]
+    user_id = query.from_user.id if query.from_user else None
 
-    if not is_authorized(user.id if user else None, config):
-        await reject_unauthorized(update)
+    if not is_authorized(user_id, config):
+        await query.answer("Sorry, this bot is private.", show_alert=True)
         return
 
-    data = query.data or ""
-    action, args = decode_callback(data)
+    # Acknowledge callback immediately to eliminate Telegram loading spinner
+    await query.answer()
+
+    action, args = decode_callback(query.data)
 
     if action == "book":
         if not args:
             return
-        try:
-            book_id = int(args[0])
-        except ValueError:
-            return
-
+        book_id = int(args[0])
         book = await db.get_book_by_id(book_id)
         if not book:
             if query.message:
-                await query.message.reply_text("⚠️ Book could not be found.")
+                await query.message.reply_text("⚠️ Book record not found.")
             return
 
-        if not book.has_cid:
-            if not acquirer:
-                if query.message:
-                    await query.message.reply_text("⚠️ Book has no CID and acquisition subsystem is not enabled.")
-                return
+        # Format message template (HTML)
+        author_str = escape(book.author) if book.author else "Unknown"
+        format_str = escape(book.file_type.upper()) if book.file_type else "Unknown format"
+        size_str = format_file_size(book.file_size)
+        title_str = escape(book.title)
 
-            # Book exists locally but has no CID: trigger acquisition
-            chat_id = query.message.chat_id if query.message else user.id
-            status_msg = await query.message.reply_text(f'🔎 Fetching from shadow libraries for "{book.title}"…')
+        links = build_links(book.md5)
 
-            async def update_status(text: str) -> None:
-                try:
-                    await status_msg.edit_text(text)
-                except Exception:
-                    pass
+        if links:
+            links_formatted = "\n".join(f'• <a href="{url}">{escape(label)}</a>' for label, url in links)
+            download_block = f"⬇️ <b>Download</b>\n{links_formatted}\n\n<i>Tap a link to download in your browser.</i>"
+        else:
+            download_block = "(no direct link)"
 
-            await acquirer.enqueue(
-                query=book.title,
-                user_id=user.id,
-                chat_id=chat_id,
-                md5=book.md5,
-                status_callback=update_status,
-            )
-            return
-
-        if book.file_size and book.file_size > config.max_telegram_file_size:
-            if query.message:
-                await query.message.reply_text(get_user_error("too_large"))
-            return
-
-        chat_id = query.message.chat_id if query.message else user.id
-        title = f"{book.title} — {book.author}" if book.author else book.title
-        ok, job, pos, msg = queue.enqueue(
-            user_id=user.id,
-            chat_id=chat_id,
-            book_id=book.id,
-            title=title,
+        msg_html = (
+            f"📖 <b>{title_str}</b>\n"
+            f"👤 {author_str}\n"
+            f"📦 {format_str} · {size_str}\n\n"
+            f"{download_block}"
         )
 
-        if not ok:
-            if query.message:
-                await query.message.reply_text(f"⚠️ {msg}")
-            return
-
-        reply_msg = (
-            "⏳ Added to the download queue.\n\n"
-            f"Position: {pos}\n\n"
-            "Book:\n"
-            f"{title}"
-        )
         if query.message:
-            await query.message.reply_text(reply_msg)
+            await query.message.reply_text(msg_html, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-    elif action in ("web", "more"):
+    elif action == "refresh":
         if not args:
             return
-        if not acquirer:
-            if query.message:
-                await query.message.reply_text("⚠️ Acquisition subsystem is not enabled.")
+        qh = args[0]
+        reg_entry = _query_registry.get(qh)
+        if not reg_entry:
+            await query.answer("Search expired. Please search again.", show_alert=True)
             return
 
-        token = args[0]
-        cached_items = candidates.get_all(user.id if user else 0, token)
-        search_query = cached_items[0].get("query", "") if cached_items else ""
-        if not search_query:
-            if query.message:
-                await query.message.reply_text("⚠️ Search session expired. Please send your query again.")
+        raw_query, last_refreshed_at = reg_entry
+        now = time.time()
+        if now - last_refreshed_at < config.refresh_cooldown:
+            wait_s = int(config.refresh_cooldown - (now - last_refreshed_at))
+            await query.answer(f"Refresh cooldown active. Please wait {wait_s}s.", show_alert=True)
             return
 
-        chat_id = query.message.chat_id if query.message else user.id
-        status_msg = await query.message.reply_text(f'🔎 Searching shadow libraries for "{search_query}"…')
+        _query_registry[qh] = (raw_query, now)
+        try:
+            outcome = await search_service.search_books(raw_query, user_id=user_id, force_upstream=True)
+            _stats["upstream_requests"] += 1
 
-        async def update_status(text: str) -> None:
-            try:
-                await status_msg.edit_text(text)
-            except Exception:
-                pass
+            if not outcome.hits:
+                if query.message:
+                    await query.message.reply_text(f'No books found for "{escape(raw_query)}".', parse_mode=ParseMode.HTML)
+                return
 
-        await acquirer.enqueue(
-            query=search_query,
-            user_id=user.id,
-            chat_id=chat_id,
-            status_callback=update_status,
-        )
+            degraded_note = "\n<i>⚠️ Sources temporarily degraded; showing cached results.</i>" if outcome.degraded else ""
+            text = f"Refreshed results ({len(outcome.hits)}):{degraded_note}"
+            reply_markup = _format_search_keyboard(outcome.hits, qh)
+            if query.message:
+                await query.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+        except RateLimitedError:
+            await query.answer("Slow down! Please wait a few seconds before searching again.", show_alert=True)
+        except AllMirrorsFailed:
+            if query.message:
+                await query.message.reply_text("⚠️ All sources unreachable. Try again later.")
+        except Exception as exc:
+            logger.error("Error refreshing %r: %s", raw_query, exc, exc_info=True)
+            if query.message:
+                await query.message.reply_text("⚠️ An error occurred while refreshing.")
 
 
 # -----------------------------------------------------------------------------
-# Bot Application Builder & Lifecycle
+# Application Factory
 # -----------------------------------------------------------------------------
 
-def build_application(
-    config: Config,
-    db: Database | None = None,
-    kubo: KuboClient | None = None,
-    queue: QueueManager | None = None,
-    resolver: SourceResolver | None = None,
-    acquirer: AcquisitionManager | None = None,
-) -> Application:
-    """Build and configure the Telegram Application instance with full pipeline."""
+def build_application(config: Config) -> Application:
+    """Build and wire the Telegram Application with all dependencies."""
+    db = Database(config.db_path)
+    db.init_schema()
+
+    mirror_manager = MirrorManager(db, connect_timeout=config.connect_timeout)
+    single_flight = SingleFlight()
+    host_rate_limiter = HostRateLimiter(polite_delay_ms=config.polite_delay_ms)
+    global_semaphore = create_global_semaphore(max_upstream=config.max_upstream)
+    user_rate_limiter = UserRateLimiter(
+        max_tokens=config.user_bucket_tokens,
+        refill_per_sec=config.user_bucket_refill,
+    )
+
+    search_service = SearchService(
+        db=db,
+        config=config,
+        mirror_manager=mirror_manager,
+        single_flight=single_flight,
+        host_rate_limiter=host_rate_limiter,
+        global_semaphore=global_semaphore,
+        user_rate_limiter=user_rate_limiter,
+    )
+
     app = ApplicationBuilder().token(config.telegram_token).build()
 
-    active_db = db or Database(config.db_path)
-    active_kubo = kubo or KuboClient(
-        api_url=config.ipfs_api_url,
-        public_gateways=config.public_gateways,
-        download_timeout=config.download_timeout,
-        max_file_size=config.max_telegram_file_size,
-    )
-    processor = create_download_processor(app, active_db, active_kubo, config)
-    active_queue = queue or QueueManager(handler=processor, max_workers=config.max_concurrent_downloads)
-
-    # Initialize sources and resolver if not supplied
-    if not resolver:
-        annas = AnnasSource(
-            mirrors=config.mirror_anna,
-            api_key=config.aa_api_key,
-            polite_delay_ms=config.polite_delay_ms,
-            scrape_timeout=config.scrape_timeout,
-        )
-        libgen = LibgenSource(
-            mirrors=config.mirror_libgen,
-            polite_delay_ms=config.polite_delay_ms,
-            scrape_timeout=config.scrape_timeout,
-        )
-        active_resolver = SourceResolver(
-            sources={"annas": annas, "libgen": libgen},
-            priority=config.source_priority,
-        )
-    else:
-        active_resolver = resolver
-
-    active_acquirer = acquirer or AcquisitionManager(
-        db=active_db,
-        kubo_client=active_kubo,
-        resolver=active_resolver,
-        delivery_queue=active_queue,
-        max_workers=config.max_acquire_jobs,
-        acquire_timeout=config.acquire_timeout,
-        max_file_size=config.max_telegram_file_size,
-        temp_dir=config.temp_dir,
-    )
-
-    # Store shared objects in bot_data
     app.bot_data["config"] = config
-    app.bot_data["db"] = active_db
-    app.bot_data["kubo"] = active_kubo
-    app.bot_data["queue"] = active_queue
-    app.bot_data["resolver"] = active_resolver
-    app.bot_data["acquirer"] = active_acquirer
+    app.bot_data["db"] = db
+    app.bot_data["mirror_manager"] = mirror_manager
+    app.bot_data["search_service"] = search_service
+    app.bot_data["user_rate_limiter"] = user_rate_limiter
 
     # Register handlers
-    app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("help", help_handler))
-    app.add_handler(CommandHandler("queue", queue_handler))
-    app.add_handler(CommandHandler("status", status_handler))
-    app.add_handler(CommandHandler("get", get_handler))
-    app.add_handler(CommandHandler("fetch", fetch_handler))
-    app.add_handler(CommandHandler("sources", sources_handler))
-    app.add_handler(CommandHandler("acquire", acquire_handler))
-    app.add_handler(CommandHandler("rebuild", rebuild_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_message_handler))
-    app.add_handler(CallbackQueryHandler(callback_query_handler))
+    app.add_handler(CommandHandler("start", handle_start))
+    app.add_handler(CommandHandler("help", handle_help))
+    app.add_handler(CommandHandler("status", handle_status))
+    app.add_handler(CommandHandler("mirrors", handle_mirrors))
+    app.add_handler(CommandHandler("rebuild", handle_rebuild))
 
-    async def post_init(application: Application) -> None:
-        logger.info("Initializing database schema...")
-        await active_db.async_init_schema()
-
-        kubo_online = await active_kubo.is_online()
-        if kubo_online:
-            logger.info("Kubo daemon verified online at %s", config.ipfs_api_url)
-        else:
-            logger.warning("Kubo daemon is OFFLINE at %s (running in degraded mode)", config.ipfs_api_url)
-
-        active_queue.start()
-        await active_acquirer.start()
-        logger.info("Bot startup complete with delivery and acquisition queues")
-
-    async def post_shutdown(application: Application) -> None:
-        logger.info("Shutting down bot...")
-        await active_acquirer.stop()
-        await active_queue.stop()
-        await active_resolver.close()
-        await active_kubo.close()
-        logger.info("Bot shutdown complete")
-
-    app.post_init = post_init
-    app.post_shutdown = post_shutdown
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_search))
 
     return app
 
 
 def main() -> None:
-    """Main CLI entrypoint."""
+    """Entry point for running Nabu bot."""
     logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    config = load_config()
+    try:
+        config = load_config()
+    except Exception as exc:
+        logger.critical("Failed loading configuration: %s", exc)
+        sys.exit(1)
+
     app = build_application(config)
+
+    # Launch background mirror probe
+    mirror_manager: MirrorManager = app.bot_data["mirror_manager"]
+    mirror_manager.startup_probe()
+
     logger.info("Starting Nabu Telegram bot polling...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

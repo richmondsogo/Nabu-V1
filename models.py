@@ -1,13 +1,14 @@
 """Data models for Nabu-V1.
 
 Plain dataclasses representing domain entities, database records, search results,
-and queue jobs. No ORM.
+and mirrors. No ORM.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,32 @@ class SearchHit:
     raw: dict[str, Any] | None = None
 
 
+@dataclass
+class Mirror:
+    id: int
+    source: str
+    url: str
+    fork: str  # 'li' | 'is'
+    enabled: bool = True
+    fail_count: int = 0
+    last_ok: str | None = None
+    last_error: str | None = None
+    cooldown_until: float | None = None
+    latency_ms: int | None = None
+
+    @property
+    def host(self) -> str:
+        return urlparse(self.url).netloc
+
+
+@dataclass(frozen=True)
+class SearchOutcome:
+    hits: list[Book]
+    source: Literal["cache", "local", "upstream"]
+    degraded: bool = False
+
+
+# Backwards compatibility types for components not yet deleted
 @dataclass(frozen=True)
 class DownloadHandle:
     kind: Literal["cid", "url"]

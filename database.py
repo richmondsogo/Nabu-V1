@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import re
 import sqlite3
+import time
 from typing import Any
 
-from models import Book
+from models import Book, Mirror
 
 SCHEMA_DDL = """
 PRAGMA journal_mode=WAL;
@@ -97,6 +99,26 @@ CREATE TABLE IF NOT EXISTS acquisitions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_acq_status ON acquisitions(status);
+
+CREATE TABLE IF NOT EXISTS search_cache (
+    query_norm TEXT PRIMARY KEY,
+    book_ids   TEXT NOT NULL,
+    fetched_at REAL NOT NULL,
+    expires_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mirrors (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    source         TEXT NOT NULL,
+    url            TEXT NOT NULL UNIQUE,
+    fork           TEXT NOT NULL,
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    fail_count     INTEGER NOT NULL DEFAULT 0,
+    last_ok        TEXT,
+    last_error     TEXT,
+    cooldown_until REAL,
+    latency_ms     INTEGER
+);
 """
 
 
@@ -122,6 +144,21 @@ def _row_to_book(row: sqlite3.Row) -> Book:
         pinned=bool(row["pinned"]),
         fetch_failures=row["fetch_failures"] if "fetch_failures" in row.keys() else 0,
         last_fetch_error=row["last_fetch_error"] if "last_fetch_error" in row.keys() else None,
+    )
+
+
+def _row_to_mirror(row: sqlite3.Row) -> Mirror:
+    return Mirror(
+        id=row["id"],
+        source=row["source"],
+        url=row["url"],
+        fork=row["fork"],
+        enabled=bool(row["enabled"]),
+        fail_count=row["fail_count"],
+        last_ok=row["last_ok"],
+        last_error=row["last_error"],
+        cooldown_until=row["cooldown_until"],
+        latency_ms=row["latency_ms"],
     )
 
 
@@ -184,6 +221,20 @@ class Database:
             # Seed default sources
             conn.execute("INSERT OR IGNORE INTO sources (name) VALUES ('annas'), ('libgen')")
 
+            # Seed default mirrors
+            mirrors_seed = [
+                ("libgen", "https://libgen.li", "li"),
+                ("libgen", "https://libgen.la", "li"),
+                ("libgen", "https://libgen.bz", "li"),
+                ("libgen", "https://libgen.is", "is"),
+                ("libgen", "https://libgen.rs", "is"),
+            ]
+            for src, url, fork in mirrors_seed:
+                conn.execute(
+                    "INSERT OR IGNORE INTO mirrors (source, url, fork) VALUES (?, ?, ?)",
+                    (src, url, fork),
+                )
+
             # FTS verification against meta table
             count_cur = conn.execute("SELECT count(*) as cnt FROM books")
             total_books = count_cur.fetchone()["cnt"]
@@ -204,7 +255,7 @@ class Database:
         await asyncio.to_thread(self.init_schema)
 
     # -------------------------------------------------------------------------
-    # Search Operations
+    # Search Operations (FTS & LIKE)
     # -------------------------------------------------------------------------
 
     def _search_sync(self, query: str, limit: int = 5) -> list[Book]:
@@ -303,8 +354,66 @@ class Database:
         return await asyncio.to_thread(self._search_sync, query, limit)
 
     # -------------------------------------------------------------------------
+    # Search Cache Operations
+    # -------------------------------------------------------------------------
+
+    def _get_search_cache_sync(self, query_norm: str) -> tuple[list[int], float] | None:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT book_ids, expires_at FROM search_cache WHERE query_norm = ?",
+                (query_norm,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            try:
+                ids = json.loads(row["book_ids"])
+                return (ids, float(row["expires_at"]))
+            except Exception:
+                return None
+
+    async def get_search_cache(self, query_norm: str) -> tuple[list[int], float] | None:
+        """Retrieve cached book IDs and expiry timestamp for normalized query."""
+        return await asyncio.to_thread(self._get_search_cache_sync, query_norm)
+
+    def _set_search_cache_sync(self, query_norm: str, book_ids: list[int], ttl: float) -> None:
+        now = time.time()
+        expires_at = now + ttl
+        payload = json.dumps(book_ids)
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO search_cache (query_norm, book_ids, fetched_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (query_norm, payload, now, expires_at),
+            )
+            conn.commit()
+
+    async def set_search_cache(self, query_norm: str, book_ids: list[int], ttl: float) -> None:
+        """Store book IDs in search cache with TTL."""
+        await asyncio.to_thread(self._set_search_cache_sync, query_norm, book_ids, ttl)
+
+    # -------------------------------------------------------------------------
     # Book Retrieval & Mutation
     # -------------------------------------------------------------------------
+
+    def _get_books_by_ids_sync(self, ids: list[int]) -> list[Book]:
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                f"SELECT * FROM books WHERE id IN ({placeholders})",
+                tuple(ids),
+            )
+            rows = {row["id"]: _row_to_book(row) for row in cursor.fetchall()}
+            # Preserve the ordering of the input ids
+            return [rows[i] for i in ids if i in rows]
+
+    async def get_books_by_ids(self, ids: list[int]) -> list[Book]:
+        """Fetch books by a list of primary keys, preserving order."""
+        return await asyncio.to_thread(self._get_books_by_ids_sync, ids)
 
     def _get_book_by_id_sync(self, book_id: int) -> Book | None:
         with self._get_connection() as conn:
@@ -332,6 +441,118 @@ class Database:
 
     async def get_book_by_cid(self, cid: str) -> Book | None:
         return await asyncio.to_thread(self._get_book_by_cid_sync, cid)
+
+    def _upsert_book_sync(
+        self,
+        title: str,
+        author: str | None = None,
+        cid: str | None = None,
+        md5: str | None = None,
+        filename: str | None = None,
+        file_size: int | None = None,
+        file_type: str | None = None,
+        description: str | None = None,
+        source: str | None = None,
+        source_id: str | None = None,
+        acquired_at: str | None = None,
+        pinned: bool = False,
+    ) -> int:
+        """Insert book or return existing ID on conflict (ON CONFLICT(md5) DO NOTHING)."""
+        now = _now_iso()
+        with self._get_connection() as conn:
+            if md5:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO books (
+                        title, author, cid, md5, filename, file_size, file_type,
+                        description, created_at, source, source_id, acquired_at, pinned
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(md5) WHERE md5 IS NOT NULL DO NOTHING
+                    """,
+                    (
+                        title,
+                        author,
+                        cid,
+                        md5,
+                        filename,
+                        file_size,
+                        file_type,
+                        description,
+                        now,
+                        source,
+                        source_id,
+                        acquired_at or (now if cid else None),
+                        1 if pinned else 0,
+                    ),
+                )
+                if cursor.rowcount > 0 and cursor.lastrowid:
+                    conn.commit()
+                    return cursor.lastrowid
+
+                # Existing row on conflict: fetch its id
+                cur_existing = conn.execute("SELECT id FROM books WHERE md5 = ?", (md5,))
+                row = cur_existing.fetchone()
+                if row:
+                    return row["id"]
+
+            # Fallback if no md5 provided
+            cursor = conn.execute(
+                """
+                INSERT INTO books (
+                    title, author, cid, md5, filename, file_size, file_type,
+                    description, created_at, source, source_id, acquired_at, pinned
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    title,
+                    author,
+                    cid,
+                    md5,
+                    filename,
+                    file_size,
+                    file_type,
+                    description,
+                    now,
+                    source,
+                    source_id,
+                    acquired_at or (now if cid else None),
+                    1 if pinned else 0,
+                ),
+            )
+            conn.commit()
+            assert cursor.lastrowid is not None
+            return cursor.lastrowid
+
+    async def upsert_book(
+        self,
+        title: str,
+        author: str | None = None,
+        cid: str | None = None,
+        md5: str | None = None,
+        filename: str | None = None,
+        file_size: int | None = None,
+        file_type: str | None = None,
+        description: str | None = None,
+        source: str | None = None,
+        source_id: str | None = None,
+        acquired_at: str | None = None,
+        pinned: bool = False,
+    ) -> int:
+        return await asyncio.to_thread(
+            self._upsert_book_sync,
+            title=title,
+            author=author,
+            cid=cid,
+            md5=md5,
+            filename=filename,
+            file_size=file_size,
+            file_type=file_type,
+            description=description,
+            source=source,
+            source_id=source_id,
+            acquired_at=acquired_at,
+            pinned=pinned,
+        )
 
     def _insert_book_sync(
         self,
@@ -377,7 +598,6 @@ class Database:
             assert book_id is not None
             conn.commit()
 
-            # Retrieve newly inserted book
             cur = conn.execute("SELECT * FROM books WHERE id = ?", (book_id,))
             return _row_to_book(cur.fetchone())
 
@@ -447,7 +667,7 @@ class Database:
         return await asyncio.to_thread(self._record_fetch_failure_sync, book_id, error)
 
     # -------------------------------------------------------------------------
-    # Acquisition Audit Tracking
+    # Acquisition Audit Tracking (Retained for backwards compatibility)
     # -------------------------------------------------------------------------
 
     def _create_acquisition_sync(
@@ -546,40 +766,89 @@ class Database:
     async def get_acquisition(self, acq_id: int) -> dict[str, Any] | None:
         return await asyncio.to_thread(self._get_acquisition_sync, acq_id)
 
-    def _get_user_active_acquisitions_sync(self, user_id: int) -> list[dict[str, Any]]:
+    # -------------------------------------------------------------------------
+    # Mirrors Table & Health Tracking
+    # -------------------------------------------------------------------------
+
+    def _active_mirrors_sync(self, source: str = "libgen") -> list[Mirror]:
+        now = time.time()
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM acquisitions
-                WHERE requested_by = ? AND finished_at IS NULL
-                ORDER BY id DESC
+                SELECT * FROM mirrors
+                WHERE source = ? AND enabled = 1 AND (cooldown_until IS NULL OR cooldown_until <= ?)
+                ORDER BY fail_count ASC, coalesce(latency_ms, 999999) ASC
                 """,
-                (user_id,),
+                (source, now),
             )
-            return [dict(row) for row in cursor.fetchall()]
+            return [_row_to_mirror(row) for row in cursor.fetchall()]
 
-    async def get_user_active_acquisitions(self, user_id: int) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(self._get_user_active_acquisitions_sync, user_id)
+    async def active_mirrors(self, source: str = "libgen") -> list[Mirror]:
+        """Return active mirrors for source, ordered by health and latency."""
+        return await asyncio.to_thread(self._active_mirrors_sync, source)
 
-    def _get_pending_acquisition_by_md5_sync(self, md5: str) -> dict[str, Any] | None:
+    def _get_all_mirrors_sync(self, source: str = "libgen") -> list[Mirror]:
         with self._get_connection() as conn:
             cursor = conn.execute(
-                """
-                SELECT * FROM acquisitions
-                WHERE md5 = ? AND finished_at IS NULL
-                ORDER BY id ASC
-                LIMIT 1
-                """,
-                (md5,),
+                "SELECT * FROM mirrors WHERE source = ? ORDER BY id ASC",
+                (source,),
             )
-            row = cursor.fetchone()
-            return dict(row) if row else None
+            return [_row_to_mirror(row) for row in cursor.fetchall()]
 
-    async def get_pending_acquisition_by_md5(self, md5: str) -> dict[str, Any] | None:
-        return await asyncio.to_thread(self._get_pending_acquisition_by_md5_sync, md5)
+    async def get_all_mirrors(self, source: str = "libgen") -> list[Mirror]:
+        return await asyncio.to_thread(self._get_all_mirrors_sync, source)
+
+    def _record_mirror_result_sync(
+        self,
+        url: str,
+        ok: bool,
+        latency_ms: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        now = time.time()
+        now_str = _now_iso()
+        with self._get_connection() as conn:
+            if ok:
+                conn.execute(
+                    """
+                    UPDATE mirrors
+                    SET fail_count = 0, last_ok = ?, last_error = NULL, cooldown_until = NULL, latency_ms = ?
+                    WHERE url = ?
+                    """,
+                    (now_str, latency_ms, url),
+                )
+            else:
+                cur = conn.execute("SELECT fail_count FROM mirrors WHERE url = ?", (url,))
+                row = cur.fetchone()
+                current_fails = row["fail_count"] if row else 0
+                new_fails = current_fails + 1
+                # Exponential cooldown: 30s, 60s, 120s, up to 600s
+                backoff_secs = min(30.0 * (2 ** (new_fails - 1)), 600.0)
+                cooldown_until = now + backoff_secs
+                err_msg = f"{now_str}: {error}" if error else now_str
+
+                conn.execute(
+                    """
+                    UPDATE mirrors
+                    SET fail_count = ?, last_error = ?, cooldown_until = ?, latency_ms = NULL
+                    WHERE url = ?
+                    """,
+                    (new_fails, err_msg, cooldown_until, url),
+                )
+            conn.commit()
+
+    async def record_mirror_result(
+        self,
+        url: str,
+        ok: bool,
+        latency_ms: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Record mirror success or failure with latency and exponential backoff."""
+        await asyncio.to_thread(self._record_mirror_result_sync, url, ok, latency_ms, error)
 
     # -------------------------------------------------------------------------
-    # Sources Table & Health Tracking
+    # Sources Table & Health Tracking (Backwards compatibility)
     # -------------------------------------------------------------------------
 
     def _get_source_sync(self, name: str) -> dict[str, Any] | None:
@@ -642,6 +911,38 @@ class Database:
             error=error,
             cooldown_until=cooldown_until,
         )
+
+    def _get_user_active_acquisitions_sync(self, user_id: int) -> list[dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM acquisitions
+                WHERE requested_by = ? AND finished_at IS NULL
+                ORDER BY id DESC
+                """,
+                (user_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    async def get_user_active_acquisitions(self, user_id: int) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._get_user_active_acquisitions_sync, user_id)
+
+    def _get_pending_acquisition_by_md5_sync(self, md5: str) -> dict[str, Any] | None:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM acquisitions
+                WHERE md5 = ? AND finished_at IS NULL
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (md5,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    async def get_pending_acquisition_by_md5(self, md5: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_pending_acquisition_by_md5_sync, md5)
 
     # -------------------------------------------------------------------------
     # Maintenance

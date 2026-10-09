@@ -1,5 +1,6 @@
 """Unit and integration tests for bot.py."""
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 import pytest
@@ -195,3 +196,15 @@ async def test_callback_hit_with_no_md5_renders_without_links(mock_config: Confi
     assert "Book Without Any Hash" in msg_html
     assert "(no direct link)" in msg_html
     assert "ads.php" not in msg_html
+
+
+@pytest.mark.asyncio
+async def test_post_shutdown_cancels_background_tasks():
+    from bot import post_shutdown
+
+    mock_app = MagicMock()
+    mock_task = asyncio.create_task(asyncio.sleep(10.0))
+    mock_app.bot_data = {"startup_probe_task": mock_task}
+
+    await post_shutdown(mock_app)
+    assert mock_task.cancelled() or mock_task.done()

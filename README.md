@@ -50,3 +50,31 @@ A private, self-hosted Telegram bot that acts as a high-throughput, zero-storage
    ```powershell
    python bot.py
    ```
+
+---
+
+## Bot Commands
+
+- `/start` / `/help` — Overview of bot search syntax and usage instructions.
+- `/status` — System health, catalog item counts, cached search volume, and hit/miss metrics.
+- `/mirrors` — Real-time upstream mirror status, measured latencies, and cooldown timers.
+- `/rebuild` — Rebuilds SQLite FTS5 search index on demand from catalog records.
+
+---
+
+## Catalog Import CLI
+
+Seed or backfill the local SQLite catalog from existing CSV, JSON, or JSONL dumps:
+
+```powershell
+python importer.py path/to/dump.csv --db data/books.db
+```
+
+Supported formats: `.csv`, `.json`, `.jsonl`. Duplicates are skipped automatically based on MD5, and FTS5 search indexes are synced after import.
+
+---
+
+## Production Deployment & Clean Shutdown
+
+- **Graceful Lifecycle:** The bot handles `SIGINT` (`Ctrl+C`) and `SIGTERM` via `ApplicationBuilder.post_shutdown()`, cancelling all in-flight probers and single-flight tasks cleanly with zero orphaned tasks.
+- **Service Running:** Run as a systemd service on Linux or background process via Task Scheduler on Windows. Logs are emitted via standard Python logging.

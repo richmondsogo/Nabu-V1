@@ -19,6 +19,7 @@ from config import Config
 from concurrency import HostRateLimiter, SingleFlight
 from database import Database
 from models import Book, Mirror, SearchHit, SearchOutcome
+from sources.annas import annas_parser
 from sources.libgen import is_parser, li_parser
 from sources.mirror_manager import MirrorManager
 
@@ -138,27 +139,29 @@ class SearchService:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
-    async def _scrape(
+    def _get_parser_for_mirror(self, mirror: Mirror):
+        if mirror.source == "annas" or mirror.fork == "annas":
+            return annas_parser
+        return is_parser if mirror.fork == "is" else li_parser
+
+    async def _scrape_source(
         self,
         query: str,
+        source: str = "libgen",
         max_results: int | None = None,
         max_pages: int | None = None,
     ) -> tuple[list[SearchHit], Mirror, int, int]:
-        """Scrape active mirrors in health order across pages with polite delay and global concurrency bound.
-
-        Returns:
-            (hits, mirror, average_latency_ms, pages_fetched)
-        """
-        mirrors = await self.mirror_manager.get_active_mirrors("libgen")
+        """Scrape active mirrors for a specific source in health order across pages."""
+        mirrors = await self.mirror_manager.get_active_mirrors(source)
         if not mirrors:
-            raise AllMirrorsFailed("No active mirrors available")
+            raise AllMirrorsFailed(f"No active mirrors available for {source}")
 
         target_max_results = max_results or self.config.upstream_max_results
         target_max_pages = max_pages or self.config.upstream_max_pages
 
         last_exc: Exception | None = None
         for mirror in mirrors:
-            parser = is_parser if mirror.fork == "is" else li_parser
+            parser = self._get_parser_for_mirror(mirror)
             all_hits: list[SearchHit] = []
             seen_keys: set[str] = set()
             total_latency = 0
@@ -191,7 +194,6 @@ class SearchService:
                     last_exc = e
                     err_desc = f"{type(e).__name__}('{e}')" if str(e) else repr(e)
                     if all_hits:
-                        # Page 1 (or prior) already yielded hits: do not discard them
                         logger.warning(
                             "[search] Mirror %s page %d failed (%s); returning %d partial hits from previous pages",
                             mirror.url, page, err_desc, len(all_hits)
@@ -229,7 +231,47 @@ class SearchService:
                 await self.mirror_manager.record_result(mirror.url, True, latency_ms=avg_latency)
                 return all_hits, mirror, avg_latency, pages_fetched
 
-        raise AllMirrorsFailed("All upstream mirrors failed") from last_exc
+        raise AllMirrorsFailed(f"All upstream mirrors failed for {source}") from last_exc
+
+    async def _scrape(
+        self,
+        query: str,
+        max_results: int | None = None,
+        max_pages: int | None = None,
+    ) -> tuple[list[SearchHit], Mirror, int, int]:
+        """Scrape primary (libgen) mirrors, falling back to secondary (annas) on failure or 0 hits."""
+        libgen_error: Exception | None = None
+        try:
+            hits, mirror, avg_latency, pages_fetched = await self._scrape_source(
+                query, source="libgen", max_results=max_results, max_pages=max_pages
+            )
+            if hits:
+                return hits, mirror, avg_latency, pages_fetched
+
+            # Libgen succeeded but returned 0 hits -> attempt Anna's Archive before giving up
+            logger.info("[search] Libgen returned 0 hits for %r; trying secondary source Anna's Archive", query)
+            try:
+                annas_res = await self._scrape_source(
+                    query, source="annas", max_results=max_results, max_pages=max_pages
+                )
+                if annas_res[0]:
+                    return annas_res
+            except Exception as annas_exc:
+                logger.debug("[search] Anna's Archive secondary fallback also returned no hits: %s", annas_exc)
+
+            return hits, mirror, avg_latency, pages_fetched
+        except AllMirrorsFailed as exc:
+            libgen_error = exc
+            logger.info("[search] All Libgen mirrors failed for %r; attempting Anna's Archive fallback...", query)
+
+        # Fallback to Anna's Archive when all Libgen mirrors failed
+        try:
+            return await self._scrape_source(
+                query, source="annas", max_results=max_results, max_pages=max_pages
+            )
+        except Exception as annas_exc:
+            logger.warning("[search] Anna's Archive fallback failed: %s", annas_exc)
+            raise AllMirrorsFailed("All upstream mirrors (Libgen and Anna's Archive) failed") from (libgen_error or annas_exc)
 
     async def _execute_scrape_and_persist(
         self,

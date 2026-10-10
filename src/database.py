@@ -278,6 +278,8 @@ class Database:
                 ("libgen", "https://libgen.bz", "li"),
                 ("libgen", "https://libgen.is", "is"),
                 ("libgen", "https://libgen.rs", "is"),
+                ("annas", "https://annas-archive.org", "annas"),
+                ("annas", "https://annas-archive.se", "annas"),
             ]
             for src, url, fork in mirrors_seed:
                 conn.execute(

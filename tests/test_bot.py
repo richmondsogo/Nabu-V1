@@ -128,9 +128,10 @@ async def test_search_results_flow(mock_config: Config, mock_db: Database):
     args, kwargs = update.effective_message.reply_text.call_args
     assert "Found 1 result(s):" in args[0]
     reply_markup = kwargs["reply_markup"]
-    assert len(reply_markup.inline_keyboard) == 2  # 1 book button + 1 refresh button
+    assert len(reply_markup.inline_keyboard) == 3  # 1 book button + 1 filter row + 1 refresh button
     assert reply_markup.inline_keyboard[0][0].callback_data == "book:42"
-    assert "refresh:" in reply_markup.inline_keyboard[1][0].callback_data
+    assert "filter:" in reply_markup.inline_keyboard[1][0].callback_data
+    assert "refresh:" in reply_markup.inline_keyboard[2][0].callback_data
 
 
 @pytest.mark.asyncio
@@ -454,6 +455,103 @@ async def test_callback_malformed_arguments_handled_gracefully(mock_config: Conf
     query.data = "page:dummyqh:notanumber"
     await handle_callback(update, context)
     query.answer.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_callback_format_filter(mock_config: Config, mock_db: Database):
+    b_epub = await mock_db.insert_book(
+        title="Epub Guide",
+        author="Author One",
+        md5="epub123",
+        file_size=1024,
+        file_type="epub",
+    )
+    b_pdf = await mock_db.insert_book(
+        title="PDF Manual",
+        author="Author Two",
+        md5="pdf123",
+        file_size=2048,
+        file_type="pdf",
+    )
+
+    from bot import _qhash, _query_registry
+    raw_query = "guide manual"
+    qh = _qhash(raw_query)
+    _query_registry[qh] = (raw_query, 0.0)
+
+    from search import normalize_query
+    qn = normalize_query(raw_query)
+    await mock_db.set_search_cache(qn, [b_epub.id, b_pdf.id], ttl=3600)
+
+    update = MagicMock()
+    query = update.callback_query
+    query.from_user.id = 1001
+    query.data = f"filter:{qh}:epub"
+    query.answer = AsyncMock()
+    query.edit_message_text = AsyncMock()
+
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "db": mock_db, "search_service": MagicMock()}
+
+    await handle_callback(update, context)
+
+    query.answer.assert_called_once()
+    query.edit_message_text.assert_called_once()
+    text = query.edit_message_text.call_args[0][0]
+    assert "[EPUB]" in text
+    assert "Epub Guide" in text
+    assert "PDF Manual" not in text
+
+    # Switch back to all
+    query.edit_message_text.reset_mock()
+    query.data = f"filter:{qh}:all"
+    await handle_callback(update, context)
+    text_all = query.edit_message_text.call_args[0][0]
+    assert "Epub Guide" in text_all
+    assert "PDF Manual" in text_all
+
+
+@pytest.mark.asyncio
+async def test_handle_inline_query_success(mock_config: Config, mock_db: Database):
+    update = MagicMock()
+    inline_q = update.inline_query
+    inline_q.from_user.id = 1001
+    inline_q.query = "python programming"
+    inline_q.answer = AsyncMock()
+
+    book = Book(id=99, title="Fluent Python", author="Luciano Ramalho", md5="fluent123", file_type="epub", file_size=500000)
+    search_service = MagicMock(spec=SearchService)
+    search_service.search_books = AsyncMock(return_value=SearchOutcome(hits=[book], source="upstream"))
+
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "db": mock_db, "search_service": search_service}
+
+    from bot import handle_inline_query
+    await handle_inline_query(update, context)
+
+    inline_q.answer.assert_called_once()
+    results = inline_q.answer.call_args[0][0]
+    assert len(results) == 1
+    assert results[0].title == "Fluent Python"
+    assert "Luciano Ramalho" in results[0].description
+    assert "[EPUB]" in results[0].description
+
+
+@pytest.mark.asyncio
+async def test_handle_inline_query_unauthorized(mock_config: Config, mock_db: Database):
+    update = MagicMock()
+    inline_q = update.inline_query
+    inline_q.from_user.id = 9999  # unauthorized
+    inline_q.query = "python"
+    inline_q.answer = AsyncMock()
+
+    context = MagicMock()
+    context.bot_data = {"config": mock_config, "db": mock_db, "search_service": MagicMock()}
+
+    from bot import handle_inline_query
+    await handle_inline_query(update, context)
+
+    inline_q.answer.assert_called_once_with([], is_personal=True, cache_time=5)
 
 
 

@@ -554,4 +554,44 @@ async def test_handle_inline_query_unauthorized(mock_config: Config, mock_db: Da
     inline_q.answer.assert_called_once_with([], is_personal=True, cache_time=5)
 
 
+def test_format_icon_mapping():
+    from bot import _format_icon
+
+    assert _format_icon("epub") == "📘"
+    assert _format_icon("EPUB") == "📘"
+    assert _format_icon("pdf") == "📕"
+    assert _format_icon("mobi") == "📙"
+    assert _format_icon("azw3") == "📙"
+    assert _format_icon("djvu") == "📗"
+    assert _format_icon("txt") == "📄"
+    assert _format_icon(None) == "📄"
+
+
+def test_format_book_card_keyboard():
+    from bot import _format_book_card_keyboard
+
+    book_with_md5 = Book(id=1, title="Test", md5="0123456789abcdef0123456789abcdef")
+    book_without_md5 = Book(id=2, title="No Hash", md5=None)
+
+    # When no MD5, keyboard is None
+    assert _format_book_card_keyboard(book_without_md5) is None
+
+    # With direct download URL
+    kb_direct = _format_book_card_keyboard(book_with_md5, direct_url="https://example.com/get.php")
+    assert kb_direct is not None
+    assert len(kb_direct.inline_keyboard) == 2
+    assert kb_direct.inline_keyboard[0][0].text == "⚡ Instant Download (One-Click)"
+    assert kb_direct.inline_keyboard[0][0].url == "https://example.com/get.php"
+    assert "libgen.li" in kb_direct.inline_keyboard[1][0].url
+    assert "libgen.is" in kb_direct.inline_keyboard[1][1].url
+
+    # Fallback without direct download URL
+    kb_fallback = _format_book_card_keyboard(book_with_md5, direct_url=None)
+    assert kb_fallback is not None
+    assert len(kb_fallback.inline_keyboard) == 2
+    assert "Libgen.li" in kb_fallback.inline_keyboard[0][0].text
+    assert "Anna's Archive" in kb_fallback.inline_keyboard[1][1].text
+
+
+
 

@@ -463,3 +463,32 @@ async def test_relaxed_query_does_not_consume_second_token(test_config: Config):
     assert len(outcome.hits) > 0
     assert outcome.is_relaxed is True
 
+
+@pytest.mark.asyncio
+async def test_search_service_aclose(test_config: Config):
+    db = Database(test_config.db_path)
+    client = httpx.AsyncClient()
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        http_client=client,
+    )
+    assert not client.is_closed
+    await service.aclose()
+    assert client.is_closed
+
+
+@pytest.mark.asyncio
+async def test_mirror_manager_aclose(test_config: Config):
+    db = Database(test_config.db_path)
+    client = httpx.AsyncClient()
+    mm = MirrorManager(db, http_client=client)
+    assert not client.is_closed
+    await mm.aclose()
+    assert client.is_closed
+
+

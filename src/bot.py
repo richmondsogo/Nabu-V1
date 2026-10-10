@@ -194,6 +194,9 @@ async def handle_rebuild(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         await db.rebuild_fts()
+        pruned = await db.prune_expired_cache()
+        await db.wal_checkpoint("TRUNCATE")
+        logger.info("[rebuild] FTS rebuilt, pruned %d expired cache entries, WAL checkpointed", pruned)
         if update.effective_message:
             await update.effective_message.reply_text("✅ Search index rebuilt successfully.")
     except Exception as exc:
@@ -595,7 +598,7 @@ async def post_init(application: Application) -> None:
 
 
 async def post_shutdown(application: Application) -> None:
-    """Clean up background tasks on application shutdown to ensure zero orphaned tasks."""
+    """Clean up background tasks, HTTP clients, and database handles on application shutdown to ensure zero leaks."""
     task: asyncio.Task | None = application.bot_data.get("startup_probe_task")
     if task and not task.done():
         logger.info("Cancelling background mirror probe task...")
@@ -604,6 +607,21 @@ async def post_shutdown(application: Application) -> None:
             await task
         except asyncio.CancelledError:
             pass
+
+    search_service: SearchService | None = application.bot_data.get("search_service")
+    if search_service:
+        await search_service.aclose()
+
+    mirror_manager: MirrorManager | None = application.bot_data.get("mirror_manager")
+    if mirror_manager:
+        await mirror_manager.aclose()
+
+    db: Database | None = application.bot_data.get("db")
+    if db:
+        try:
+            await db.wal_checkpoint("TRUNCATE")
+        except Exception as exc:
+            logger.warning("Failed WAL checkpoint on shutdown: %r", exc)
 
 
 def build_application(config: Config) -> Application:

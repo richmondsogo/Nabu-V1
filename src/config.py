@@ -39,6 +39,7 @@ class Config:
     user_bucket_tokens: float = 5.0
     user_bucket_refill: float = 0.5
     refresh_cooldown: float = 300.0
+    maintenance_interval_sec: float = 21600.0  # 6 hours
     mirror_libgen: tuple[str, ...] = (
         "https://libgen.li",
         "https://libgen.la",
@@ -186,6 +187,9 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
     user_bucket_tokens = _parse_float(raw_env.get("USER_BUCKET_TOKENS"), "USER_BUCKET_TOKENS", 5.0)
     user_bucket_refill = _parse_float(raw_env.get("USER_BUCKET_REFILL"), "USER_BUCKET_REFILL", 0.5)
     refresh_cooldown = _parse_float(raw_env.get("REFRESH_COOLDOWN"), "REFRESH_COOLDOWN", 300.0)
+    maintenance_interval_sec = _parse_float(
+        raw_env.get("MAINTENANCE_INTERVAL_SEC"), "MAINTENANCE_INTERVAL_SEC", 21600.0
+    )
 
     # Backwards compatibility / unused fields
     max_downloads = _parse_int(raw_env.get("MAX_CONCURRENT_DOWNLOADS"), "MAX_CONCURRENT_DOWNLOADS", 3)
@@ -230,6 +234,7 @@ def load_config(env: Mapping[str, str | None] | None = None, env_file: Path | st
         user_bucket_tokens=user_bucket_tokens,
         user_bucket_refill=user_bucket_refill,
         refresh_cooldown=refresh_cooldown,
+        maintenance_interval_sec=maintenance_interval_sec,
         mirror_libgen=mirror_libgen,
         temp_dir=temp_dir,
         max_telegram_file_size=max_tg_size,

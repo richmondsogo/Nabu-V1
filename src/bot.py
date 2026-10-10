@@ -61,7 +61,18 @@ _stats = {
     "cache_hits": 0,
     "local_hits": 0,
     "upstream_requests": 0,
+    "started_at": time.time(),
 }
+
+
+def _format_uptime(started_at: float) -> str:
+    """Format elapsed time in hours, minutes, and seconds."""
+    elapsed = max(0, int(time.time() - started_at))
+    hours, rem = divmod(elapsed, 3600)
+    mins, secs = divmod(rem, 60)
+    if hours > 0:
+        return f"{hours}h {mins}m {secs}s"
+    return f"{mins}m {secs}s"
 
 
 def _qhash(query: str) -> str:
@@ -131,22 +142,21 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     mirrors = await db.get_all_mirrors("libgen")
     active_count = sum(1 for m in mirrors if m.enabled and (m.cooldown_until is None or m.cooldown_until <= time.time()))
 
-    books_cnt = 0
-    with db._get_connection() as conn:
-        row = conn.execute("SELECT count(*) as cnt FROM books").fetchone()
-        books_cnt = row["cnt"] if row else 0
-        cache_row = conn.execute("SELECT count(*) as cnt FROM search_cache").fetchone()
-        cache_cnt = cache_row["cnt"] if cache_row else 0
+    stats = await db.get_stats()
+    total_reqs = _stats["cache_hits"] + _stats["upstream_requests"]
+    hit_ratio = f"{(_stats['cache_hits'] / total_reqs * 100):.1f}%" if total_reqs > 0 else "0.0%"
 
     status_text = (
         "<b>Nabu Status</b>\n\n"
-        f"Catalog books: <b>{books_cnt:,}</b>\n"
-        f"Cached searches: <b>{cache_cnt:,}</b>\n"
+        f"Uptime: <b>{_format_uptime(_stats.get('started_at', time.time()))}</b>\n"
+        f"Catalog books: <b>{stats.books_count:,}</b>\n"
+        f"Cached searches: <b>{stats.search_cache_count:,}</b>\n"
+        f"Database size: <b>{format_file_size(stats.db_size_bytes)}</b> (WAL: <b>{format_file_size(stats.wal_size_bytes)}</b>)\n"
         f"Active mirrors: <b>{active_count}/{len(mirrors)}</b>\n\n"
         "<b>Traffic:</b>\n"
-        f"• Cache hits: {_stats['cache_hits']:,}\n"
-        f"• Local catalog hits: {_stats['local_hits']:,}\n"
-        f"• Upstream scrapes: {_stats['upstream_requests']:,}"
+        f"• Cache hits: {_stats['cache_hits']:,} ({hit_ratio})\n"
+        f"• Upstream scrapes: {_stats['upstream_requests']:,}\n"
+        f"• Degraded hits: {_stats['local_hits']:,}"
     )
     if update.effective_message:
         await update.effective_message.reply_text(status_text, parse_mode=ParseMode.HTML)
@@ -590,11 +600,39 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.debug("Failed sending error notification to user: %r", notify_err)
 
 
+async def _maintenance_loop(db: Database, interval_sec: float) -> None:
+    """Periodically prune expired search cache entries and checkpoint WAL."""
+    logger.info("Starting background maintenance loop (interval: %ss)", interval_sec)
+    try:
+        while True:
+            await asyncio.sleep(interval_sec)
+            try:
+                pruned = await db.prune_expired_cache()
+                cp = await db.wal_checkpoint("PASSIVE")
+                logger.info(
+                    "[maintenance] Pruned %d expired cache entries; WAL checkpoint: %s",
+                    pruned,
+                    cp,
+                )
+            except Exception as exc:
+                logger.warning("[maintenance] Error during periodic maintenance: %r", exc)
+    except asyncio.CancelledError:
+        logger.info("Background maintenance loop cancelled.")
+
+
 async def post_init(application: Application) -> None:
-    """Launch background mirror probe once the event loop is active."""
+    """Launch background mirror probe and maintenance tasks once event loop is active."""
     mirror_manager: MirrorManager | None = application.bot_data.get("mirror_manager")
     if mirror_manager:
         application.bot_data["startup_probe_task"] = mirror_manager.startup_probe()
+
+    db: Database | None = application.bot_data.get("db")
+    config: Config | None = application.bot_data.get("config")
+    if db:
+        interval = getattr(config, "maintenance_interval_sec", 21600.0) if config else 21600.0
+        application.bot_data["maintenance_task"] = asyncio.create_task(
+            _maintenance_loop(db, interval)
+        )
 
 
 async def post_shutdown(application: Application) -> None:
@@ -605,6 +643,15 @@ async def post_shutdown(application: Application) -> None:
         task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+
+    m_task: asyncio.Task | None = application.bot_data.get("maintenance_task")
+    if m_task and not m_task.done():
+        logger.info("Cancelling background maintenance task...")
+        m_task.cancel()
+        try:
+            await m_task
         except asyncio.CancelledError:
             pass
 

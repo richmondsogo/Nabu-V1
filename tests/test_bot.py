@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+import time
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
@@ -199,17 +200,31 @@ async def test_callback_hit_with_no_md5_renders_without_links(mock_config: Confi
 
 
 @pytest.mark.asyncio
-async def test_post_init_launches_startup_probe():
+async def test_post_init_launches_startup_probe_and_maintenance():
     from bot import post_init
 
     mock_app = MagicMock()
     mock_mm = MagicMock()
     fake_task = asyncio.create_task(asyncio.sleep(0.01))
     mock_mm.startup_probe.return_value = fake_task
-    mock_app.bot_data = {"mirror_manager": mock_mm}
+    mock_db = MagicMock()
+    mock_config = MagicMock()
+    mock_config.maintenance_interval_sec = 100.0
+
+    mock_app.bot_data = {
+        "mirror_manager": mock_mm,
+        "db": mock_db,
+        "config": mock_config,
+    }
 
     await post_init(mock_app)
     assert mock_app.bot_data["startup_probe_task"] is fake_task
+    assert "maintenance_task" in mock_app.bot_data
+    mock_app.bot_data["maintenance_task"].cancel()
+    try:
+        await mock_app.bot_data["maintenance_task"]
+    except asyncio.CancelledError:
+        pass
     mock_mm.startup_probe.assert_called_once()
     await fake_task
 
@@ -220,6 +235,7 @@ async def test_post_shutdown_cancels_background_tasks():
 
     mock_app = MagicMock()
     mock_task = asyncio.create_task(asyncio.sleep(10.0))
+    mock_m_task = asyncio.create_task(asyncio.sleep(10.0))
     mock_search = MagicMock()
     mock_search.aclose = AsyncMock()
     mock_mm = MagicMock()
@@ -229,6 +245,7 @@ async def test_post_shutdown_cancels_background_tasks():
 
     mock_app.bot_data = {
         "startup_probe_task": mock_task,
+        "maintenance_task": mock_m_task,
         "search_service": mock_search,
         "mirror_manager": mock_mm,
         "db": mock_db,
@@ -236,9 +253,33 @@ async def test_post_shutdown_cancels_background_tasks():
 
     await post_shutdown(mock_app)
     assert mock_task.cancelled() or mock_task.done()
+    assert mock_m_task.cancelled() or mock_m_task.done()
     mock_search.aclose.assert_awaited_once()
     mock_mm.aclose.assert_awaited_once()
     mock_db.wal_checkpoint.assert_awaited_once_with("TRUNCATE")
+
+
+@pytest.mark.asyncio
+async def test_maintenance_loop_and_uptime():
+    from bot import _format_uptime, _maintenance_loop
+
+    assert "1h" in _format_uptime(time.time() - 3661)
+    assert "30s" in _format_uptime(time.time() - 30)
+
+    mock_db = MagicMock()
+    mock_db.prune_expired_cache = AsyncMock(return_value=2)
+    mock_db.wal_checkpoint = AsyncMock(return_value={"busy": 0})
+
+    task = asyncio.create_task(_maintenance_loop(mock_db, interval_sec=0.01))
+    await asyncio.sleep(0.03)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert mock_db.prune_expired_cache.call_count >= 1
+    assert mock_db.wal_checkpoint.call_count >= 1
 
 
 @pytest.mark.asyncio

@@ -220,10 +220,25 @@ async def test_post_shutdown_cancels_background_tasks():
 
     mock_app = MagicMock()
     mock_task = asyncio.create_task(asyncio.sleep(10.0))
-    mock_app.bot_data = {"startup_probe_task": mock_task}
+    mock_search = MagicMock()
+    mock_search.aclose = AsyncMock()
+    mock_mm = MagicMock()
+    mock_mm.aclose = AsyncMock()
+    mock_db = MagicMock()
+    mock_db.wal_checkpoint = AsyncMock()
+
+    mock_app.bot_data = {
+        "startup_probe_task": mock_task,
+        "search_service": mock_search,
+        "mirror_manager": mock_mm,
+        "db": mock_db,
+    }
 
     await post_shutdown(mock_app)
     assert mock_task.cancelled() or mock_task.done()
+    mock_search.aclose.assert_awaited_once()
+    mock_mm.aclose.assert_awaited_once()
+    mock_db.wal_checkpoint.assert_awaited_once_with("TRUNCATE")
 
 
 @pytest.mark.asyncio

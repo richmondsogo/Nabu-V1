@@ -356,3 +356,65 @@ async def test_mirrors_health_and_cooldown(test_db: Database):
     await test_db.record_mirror_result(first_url, ok=True, latency_ms=120)
     active_recovered = await test_db.active_mirrors("libgen")
     assert len(active_recovered) == 5
+
+
+def test_connection_lifecycle_closes_handles(test_db: Database):
+    """Verify that _get_connection closes the connection on exit."""
+    captured_conn = None
+    with test_db._get_connection() as conn:
+        captured_conn = conn
+        cur = conn.execute("SELECT 1 as x")
+        assert cur.fetchone()["x"] == 1
+
+    # Attempting to query on the closed connection should raise ProgrammingError
+    with pytest.raises(sqlite3.ProgrammingError, match="Cannot operate on a closed database"):
+        captured_conn.execute("SELECT 1")
+
+
+@pytest.mark.asyncio
+async def test_wal_checkpoint_and_modes(test_db: Database):
+    """Verify WAL checkpointing synchronously and asynchronously."""
+    res_sync = test_db.wal_checkpoint_sync("TRUNCATE")
+    assert isinstance(res_sync, dict)
+    assert "busy" in res_sync
+    assert res_sync["busy"] == 0
+
+    res_async = await test_db.wal_checkpoint("PASSIVE")
+    assert isinstance(res_async, dict)
+    assert res_async["busy"] == 0
+
+    with pytest.raises(ValueError, match="Invalid WAL checkpoint mode"):
+        test_db.wal_checkpoint_sync("INVALID")
+
+
+@pytest.mark.asyncio
+async def test_prune_expired_search_cache(test_db: Database):
+    """Verify that only expired search cache records are pruned."""
+    now = 1000.0
+    # Entry 1: expired
+    await test_db.set_search_cache(
+        query_norm="expired_query",
+        book_ids=[1, 2],
+        ttl=-10.0,
+        now=now,
+    )
+    # Entry 2: active
+    await test_db.set_search_cache(
+        query_norm="active_query",
+        book_ids=[3],
+        ttl=100.0,
+        now=now,
+    )
+
+    deleted = await test_db.prune_expired_cache(now=now)
+    assert deleted == 1
+
+    # Expired entry is gone
+    cached_expired = await test_db.get_search_cache("expired_query")
+    assert cached_expired is None
+
+    # Active entry remains
+    cached_active = await test_db.get_search_cache("active_query")
+    assert cached_active is not None
+    assert cached_active.book_ids == [3]
+

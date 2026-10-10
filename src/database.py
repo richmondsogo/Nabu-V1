@@ -8,6 +8,8 @@ and an async-safe wrapper around synchronous sqlite3 operations.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -209,7 +211,8 @@ class Database:
     def _ensure_parent_dir(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         conn = sqlite3.connect(
             str(self.db_path),
             timeout=30.0,
@@ -219,7 +222,11 @@ class Database:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def init_schema(self) -> None:
         """Synchronously initialize schema, run additive migrations, and sync FTS index."""
@@ -468,9 +475,10 @@ class Database:
         is_complete: bool = True,
         pages_fetched: int = 1,
         total_upstream: int = 0,
+        now: float | None = None,
     ) -> None:
-        now = time.time()
-        expires_at = now + ttl
+        current_time = time.time() if now is None else now
+        expires_at = current_time + ttl
         payload = json.dumps(book_ids)
         with self._get_connection() as conn:
             conn.execute(
@@ -485,7 +493,7 @@ class Database:
                     pages_fetched = excluded.pages_fetched,
                     total_upstream = excluded.total_upstream
                 """,
-                (query_norm, payload, now, expires_at, 1 if is_complete else 0, pages_fetched, total_upstream),
+                (query_norm, payload, current_time, expires_at, 1 if is_complete else 0, pages_fetched, total_upstream),
             )
             conn.commit()
 
@@ -497,6 +505,7 @@ class Database:
         is_complete: bool = True,
         pages_fetched: int = 1,
         total_upstream: int = 0,
+        now: float | None = None,
     ) -> None:
         """Store book IDs in search cache with TTL and completion status."""
         await asyncio.to_thread(
@@ -507,6 +516,7 @@ class Database:
             is_complete,
             pages_fetched,
             total_upstream,
+            now,
         )
 
     # -------------------------------------------------------------------------
@@ -675,6 +685,100 @@ class Database:
             acquired_at=acquired_at,
             pinned=pinned,
         )
+
+    def _upsert_books_sync(self, book_dicts: list[dict[str, Any]]) -> list[int]:
+        """Batch upsert multiple books within a single connection and transaction."""
+        now = _now_iso()
+        ids: list[int] = []
+        with self._get_connection() as conn:
+            for b in book_dicts:
+                title = b["title"]
+                author = b.get("author")
+                cid = b.get("cid")
+                md5 = b.get("md5")
+                filename = b.get("filename")
+                file_size = b.get("file_size")
+                file_type = b.get("file_type")
+                description = b.get("description")
+                source = b.get("source")
+                source_id = b.get("source_id")
+                acquired_at = b.get("acquired_at")
+                pinned = b.get("pinned", False)
+
+                if md5:
+                    cursor = conn.execute(
+                        """
+                        INSERT INTO books (
+                            title, author, cid, md5, filename, file_size, file_type,
+                            description, created_at, source, source_id, acquired_at, pinned
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(md5) WHERE md5 IS NOT NULL DO UPDATE SET
+                            title = excluded.title,
+                            author = coalesce(excluded.author, books.author),
+                            file_size = coalesce(excluded.file_size, books.file_size),
+                            file_type = coalesce(excluded.file_type, books.file_type),
+                            source = coalesce(excluded.source, books.source),
+                            source_id = coalesce(excluded.source_id, books.source_id),
+                            description = coalesce(excluded.description, books.description)
+                        """,
+                        (
+                            title,
+                            author,
+                            cid,
+                            md5,
+                            filename,
+                            file_size,
+                            file_type,
+                            description,
+                            now,
+                            source,
+                            source_id,
+                            acquired_at or (now if cid else None),
+                            1 if pinned else 0,
+                        ),
+                    )
+                    if cursor.rowcount > 0 and cursor.lastrowid:
+                        ids.append(cursor.lastrowid)
+                        continue
+
+                    cur_existing = conn.execute("SELECT id FROM books WHERE md5 = ?", (md5,))
+                    row = cur_existing.fetchone()
+                    if row:
+                        ids.append(row["id"])
+                        continue
+
+                cursor = conn.execute(
+                    """
+                    INSERT INTO books (
+                        title, author, cid, md5, filename, file_size, file_type,
+                        description, created_at, source, source_id, acquired_at, pinned
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        title,
+                        author,
+                        cid,
+                        md5,
+                        filename,
+                        file_size,
+                        file_type,
+                        description,
+                        now,
+                        source,
+                        source_id,
+                        acquired_at or (now if cid else None),
+                        1 if pinned else 0,
+                    ),
+                )
+                if cursor.lastrowid:
+                    ids.append(cursor.lastrowid)
+            conn.commit()
+        return ids
+
+    async def upsert_books(self, book_dicts: list[dict[str, Any]]) -> list[int]:
+        """Asynchronously batch upsert multiple books."""
+        return await asyncio.to_thread(self._upsert_books_sync, book_dicts)
+
 
     def _insert_book_sync(
         self,
@@ -1084,3 +1188,35 @@ class Database:
     async def rebuild_fts(self) -> None:
         """Rebuild the SQLite FTS5 index from books table."""
         await asyncio.to_thread(self._rebuild_fts_sync)
+
+    def wal_checkpoint_sync(self, mode: str = "TRUNCATE") -> dict[str, int]:
+        """Run a SQLite WAL checkpoint (default TRUNCATE to flush and reset WAL file)."""
+        valid_modes = {"PASSIVE", "FULL", "RESTART", "TRUNCATE"}
+        mode_upper = mode.upper()
+        if mode_upper not in valid_modes:
+            raise ValueError(f"Invalid WAL checkpoint mode: {mode}. Must be one of {valid_modes}")
+        with self._get_connection() as conn:
+            cursor = conn.execute(f"PRAGMA wal_checkpoint({mode_upper});")
+            row = cursor.fetchone()
+            if row:
+                return {"busy": int(row[0]), "log": int(row[1]), "checkpointed": int(row[2])}
+            return {"busy": 0, "log": 0, "checkpointed": 0}
+
+    async def wal_checkpoint(self, mode: str = "TRUNCATE") -> dict[str, int]:
+        """Asynchronously run a SQLite WAL checkpoint."""
+        return await asyncio.to_thread(self.wal_checkpoint_sync, mode)
+
+    def prune_expired_cache_sync(self, now: float | None = None) -> int:
+        """Delete expired search cache entries and return the count of deleted rows."""
+        current_time = time.time() if now is None else now
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM search_cache WHERE expires_at < ?",
+                (current_time,),
+            )
+            return cursor.rowcount
+
+    async def prune_expired_cache(self, now: float | None = None) -> int:
+        """Asynchronously delete expired search cache entries."""
+        return await asyncio.to_thread(self.prune_expired_cache_sync, now)
+

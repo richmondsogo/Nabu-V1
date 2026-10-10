@@ -133,6 +133,11 @@ class SearchService:
         self.user_rate_limiter = user_rate_limiter
         self._client = http_client or httpx.AsyncClient()
 
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
     async def _scrape(
         self,
         query: str,
@@ -233,20 +238,20 @@ class SearchService:
         """Runs upstream scrape, upserts books into DB, and writes to search_cache."""
         upstream_hits, mirror, latency_ms, pages_fetched = await self._scrape(query)
 
-        upstream_ids: list[int] = []
-        for hit in upstream_hits:
-            bid = await self.db.upsert_book(
-                title=hit.title,
-                author=hit.author,
-                md5=hit.md5,
-                filename=None,
-                file_size=hit.filesize,
-                file_type=hit.extension,
-                source=hit.source,
-                source_id=hit.source_id,
-            )
-            upstream_ids.append(bid)
-
+        book_payloads = [
+            {
+                "title": hit.title,
+                "author": hit.author,
+                "md5": hit.md5,
+                "filename": None,
+                "file_size": hit.filesize,
+                "file_type": hit.extension,
+                "source": hit.source,
+                "source_id": hit.source_id,
+            }
+            for hit in upstream_hits
+        ]
+        upstream_ids = await self.db.upsert_books(book_payloads)
         final_ids = list(dict.fromkeys(upstream_ids))[:self.config.upstream_max_results]
         books = await self.db.get_books_by_ids(final_ids)
         ranked_books = _rank_books(books, query)

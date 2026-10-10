@@ -19,9 +19,20 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 class MirrorManager:
     """Manages upstream mirror selection, health probing, latency, and exponential cooldowns."""
 
-    def __init__(self, db: Database, connect_timeout: float = 8.0) -> None:
+    def __init__(
+        self,
+        db: Database,
+        connect_timeout: float = 8.0,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         self.db = db
         self.connect_timeout = connect_timeout
+        self._client = http_client
+
+    async def aclose(self) -> None:
+        """Close managed HTTP client if initialized and open."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def get_active_mirrors(self, source: str = "libgen") -> list[Mirror]:
         """Return enabled mirrors not currently in cooldown, sorted by health and latency."""
@@ -82,8 +93,11 @@ class MirrorManager:
 
             close_client = False
             if client is None:
-                client = httpx.AsyncClient(timeout=self.connect_timeout)
-                close_client = True
+                if self._client and not self._client.is_closed:
+                    client = self._client
+                else:
+                    client = httpx.AsyncClient(timeout=self.connect_timeout)
+                    close_client = True
 
             try:
                 tasks = [self.probe_mirror(m, client) for m in mirrors]
@@ -124,8 +138,11 @@ class MirrorManager:
 
         close_client = False
         if client is None:
-            client = httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=min(2.5, timeout)))
-            close_client = True
+            if self._client and not self._client.is_closed:
+                client = self._client
+            else:
+                client = httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=min(2.5, timeout)))
+                close_client = True
 
         try:
             for mirror in li_mirrors:

@@ -483,6 +483,86 @@ async def test_search_service_aclose(test_config: Config):
 
 
 @pytest.mark.asyncio
+async def test_search_annas_fallback_on_libgen_mirrors_failed(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    annas_html = """
+    <html><body>
+      <a href="/md5/99887766554433221100aabbccddeeff">
+        <h3>Distributed Systems Engineering</h3>
+        <div>Nancy Lynch · pdf · 5.5MB</div>
+      </a>
+    </body></html>
+    """
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "libgen" in url_str:
+            return httpx.Response(500, text="Internal Server Error")
+        elif "annas-archive" in url_str:
+            return httpx.Response(200, text=annas_html)
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        http_client=client,
+    )
+
+    outcome = await service.search_books("Distributed Systems", user_id=1001)
+    assert len(outcome.hits) == 1
+    assert outcome.hits[0].title == "Distributed Systems Engineering"
+    assert outcome.hits[0].source == "annas"
+    assert outcome.hits[0].md5 == "99887766554433221100aabbccddeeff"
+
+
+@pytest.mark.asyncio
+async def test_search_annas_fallback_on_libgen_zero_hits(test_config: Config):
+    db = Database(test_config.db_path)
+    db.init_schema()
+
+    empty_libgen_html = "<table><tr><th>Title</th></tr></table>"
+    annas_html = """
+    <html><body>
+      <a href="/md5/fedcba9876543210fedcba9876543210">
+        <h3>Site Reliability Engineering</h3>
+        <div>Betsy Beyer · epub · 8.2MB</div>
+      </a>
+    </body></html>
+    """
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "libgen" in url_str:
+            return httpx.Response(200, text=empty_libgen_html)
+        elif "annas-archive" in url_str:
+            return httpx.Response(200, text=annas_html)
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    service = SearchService(
+        db=db,
+        config=test_config,
+        mirror_manager=MirrorManager(db),
+        single_flight=SingleFlight(),
+        host_rate_limiter=HostRateLimiter(0),
+        global_semaphore=create_global_semaphore(4),
+        http_client=client,
+    )
+
+    outcome = await service.search_books("Site Reliability Engineering", user_id=1001)
+    assert len(outcome.hits) == 1
+    assert outcome.hits[0].title == "Site Reliability Engineering"
+    assert outcome.hits[0].source == "annas"
+
+
+@pytest.mark.asyncio
 async def test_mirror_manager_aclose(test_config: Config):
     db = Database(test_config.db_path)
     client = httpx.AsyncClient()
@@ -490,5 +570,6 @@ async def test_mirror_manager_aclose(test_config: Config):
     assert not client.is_closed
     await mm.aclose()
     assert client.is_closed
+
 
 

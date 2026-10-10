@@ -418,3 +418,18 @@ async def test_prune_expired_search_cache(test_db: Database):
     assert cached_active is not None
     assert cached_active.book_ids == [3]
 
+
+@pytest.mark.asyncio
+async def test_database_get_stats(test_db: Database):
+    """Verify that get_stats returns correct counts and file sizes."""
+    await test_db.insert_book(title="Stats Book 1", author="Author 1")
+    await test_db.insert_book(title="Stats Book 2", author="Author 2")
+    await test_db.set_search_cache("stats query", [1, 2], ttl=3600.0)
+
+    stats = await test_db.get_stats()
+    assert stats.books_count >= 2
+    assert stats.search_cache_count >= 1
+    assert stats.db_size_bytes > 0
+    assert stats.wal_size_bytes >= 0
+
+

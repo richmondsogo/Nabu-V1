@@ -1,0 +1,27 @@
+[Unit]
+Description=Nabu-V1 Telegram Book Link Resolver Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nabu
+Group=nabu
+WorkingDirectory=/opt/nabu
+EnvironmentFile=/opt/nabu/.env
+ExecStart=/opt/nabu/.venv/bin/python src/bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nabu-bot
+
+# Security sandboxing
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/nabu/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

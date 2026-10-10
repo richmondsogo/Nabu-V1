@@ -1,0 +1,18 @@
+services:
+  nabu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nabu-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DB_PATH=/app/data/books.db
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

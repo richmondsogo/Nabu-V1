@@ -25,6 +25,8 @@ if str(_SRC_DIR) not in sys.path:
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
     Update,
 )
 from telegram.constants import ParseMode
@@ -34,6 +36,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
@@ -61,7 +64,18 @@ _stats = {
     "cache_hits": 0,
     "local_hits": 0,
     "upstream_requests": 0,
+    "started_at": time.time(),
 }
+
+
+def _format_uptime(started_at: float) -> str:
+    """Format elapsed time in hours, minutes, and seconds."""
+    elapsed = max(0, int(time.time() - started_at))
+    hours, rem = divmod(elapsed, 3600)
+    mins, secs = divmod(rem, 60)
+    if hours > 0:
+        return f"{hours}h {mins}m {secs}s"
+    return f"{mins}m {secs}s"
 
 
 def _qhash(query: str) -> str:
@@ -131,22 +145,21 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     mirrors = await db.get_all_mirrors("libgen")
     active_count = sum(1 for m in mirrors if m.enabled and (m.cooldown_until is None or m.cooldown_until <= time.time()))
 
-    books_cnt = 0
-    with db._get_connection() as conn:
-        row = conn.execute("SELECT count(*) as cnt FROM books").fetchone()
-        books_cnt = row["cnt"] if row else 0
-        cache_row = conn.execute("SELECT count(*) as cnt FROM search_cache").fetchone()
-        cache_cnt = cache_row["cnt"] if cache_row else 0
+    stats = await db.get_stats()
+    total_reqs = _stats["cache_hits"] + _stats["upstream_requests"]
+    hit_ratio = f"{(_stats['cache_hits'] / total_reqs * 100):.1f}%" if total_reqs > 0 else "0.0%"
 
     status_text = (
         "<b>Nabu Status</b>\n\n"
-        f"Catalog books: <b>{books_cnt:,}</b>\n"
-        f"Cached searches: <b>{cache_cnt:,}</b>\n"
+        f"Uptime: <b>{_format_uptime(_stats.get('started_at', time.time()))}</b>\n"
+        f"Catalog books: <b>{stats.books_count:,}</b>\n"
+        f"Cached searches: <b>{stats.search_cache_count:,}</b>\n"
+        f"Database size: <b>{format_file_size(stats.db_size_bytes)}</b> (WAL: <b>{format_file_size(stats.wal_size_bytes)}</b>)\n"
         f"Active mirrors: <b>{active_count}/{len(mirrors)}</b>\n\n"
         "<b>Traffic:</b>\n"
-        f"• Cache hits: {_stats['cache_hits']:,}\n"
-        f"• Local catalog hits: {_stats['local_hits']:,}\n"
-        f"• Upstream scrapes: {_stats['upstream_requests']:,}"
+        f"• Cache hits: {_stats['cache_hits']:,} ({hit_ratio})\n"
+        f"• Upstream scrapes: {_stats['upstream_requests']:,}\n"
+        f"• Degraded hits: {_stats['local_hits']:,}"
     )
     if update.effective_message:
         await update.effective_message.reply_text(status_text, parse_mode=ParseMode.HTML)
@@ -253,17 +266,70 @@ def _format_empty_results_text(query: str, upstream_reached: bool = False) -> st
     )
 
 
+def _filter_hits(hits: list[Book], active_filter: str = "all") -> list[Book]:
+    filt = active_filter.strip().lower()
+    if filt in ("", "all"):
+        return hits
+    return [b for b in hits if (b.file_type or "").strip().lower() == filt]
+
+
+def _format_book_card(book: Book, direct_url: str | None = None) -> str:
+    """Format a detailed book card HTML text with direct and backup links."""
+    author_str = escape(book.author) if book.author else ""
+    format_str = escape(book.file_type.upper()) if book.file_type else ""
+    size_str = format_file_size(book.file_size)
+    title_str = escape(book.title)
+
+    if not book.md5:
+        download_block = "(no direct link)"
+    else:
+        clean_md5 = book.md5.strip().lower()
+        if direct_url:
+            download_block = (
+                "<b>Download:</b>\n"
+                f'• <a href="{direct_url}"><b>⚡ Direct Download (One-Click)</b></a>\n'
+                f'• <a href="https://libgen.la/ads.php?md5={clean_md5}">Libgen.la (Backup)</a>\n'
+                f'• <a href="https://libgen.is/book/index.php?md5={clean_md5}">Libgen.is (Backup)</a>\n\n'
+                "<i>Link is temporary. Tap the book again for a fresh one.</i>"
+            )
+        else:
+            links = build_links(book.md5)
+            links_formatted = "\n".join(f'• <a href="{url}"><b>{escape(label)}</b></a>' for label, url in links)
+            download_block = (
+                "<i>⚠️ Direct download link unavailable; using landing page links:</i>\n\n"
+                f"<b>Download links:</b>\n{links_formatted}\n\n"
+                "<i>Tap a link to download in your browser.</i>"
+            )
+
+    spec_parts = []
+    if format_str:
+        spec_parts.append(format_str)
+    if size_str and size_str != "Unknown size":
+        spec_parts.append(size_str)
+    spec_line = f"\n{' · '.join(spec_parts)}" if spec_parts else ""
+    author_line = f"\n{author_str}" if author_str else ""
+
+    return (
+        f"<b>{title_str}</b>"
+        f"{author_line}"
+        f"{spec_line}\n\n"
+        f"{download_block}"
+    )
+
+
 def _format_results_text(
     outcome: SearchOutcome,
     page: int = 1,
     page_size: int = 8,
+    active_filter: str = "all",
 ) -> str:
-    total = len(outcome.hits)
+    filtered_hits = _filter_hits(outcome.hits, active_filter)
+    total = len(filtered_hits)
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
     start = (page - 1) * page_size
     end = min(start + page_size, total)
-    page_hits = outcome.hits[start:end]
+    page_hits = filtered_hits[start:end]
 
     q_display = escape(outcome.query_normalized or "")
     source_str = _source_label(outcome.source, outcome.mirror_url, outcome.latency_ms, outcome.degraded)
@@ -273,26 +339,30 @@ def _format_results_text(
         else ""
     )
     relaxed_note = "\n<i>ℹ️ Strict query returned no results; showing relaxed search results.</i>" if outcome.is_relaxed else ""
+    filter_label = f" [{active_filter.upper()}]" if active_filter.lower() != "all" else ""
 
     lines = [
-        f"<b>Search:</b> <code>{q_display}</code>",
-        f"Found {total} result(s): Showing {start + 1}–{end} of {total} (Page {page}/{total_pages}) · {source_str}{degraded_note}{relaxed_note}",
+        f"<b>Search:</b> <code>{q_display}</code>{filter_label}",
+        f"Found {total} result(s): Showing {start + 1 if total > 0 else 0}–{end} of {total} (Page {page}/{total_pages}) · {source_str}{degraded_note}{relaxed_note}",
         "",
     ]
 
-    for idx, b in enumerate(page_hits, start=start + 1):
-        meta_parts = []
-        if b.author:
-            meta_parts.append(escape(b.author))
-        if b.file_type:
-            meta_parts.append(escape(b.file_type.upper()))
-        if b.file_size:
-            meta_parts.append(format_file_size(b.file_size))
-        meta_info = " · ".join(meta_parts)
-        if meta_info:
-            lines.append(f"{idx}. <b>{escape(b.title)}</b>\n   {meta_info}\n")
-        else:
-            lines.append(f"{idx}. <b>{escape(b.title)}</b>\n")
+    if total == 0:
+        lines.append(f"<i>No {active_filter.upper()} results found for this search. Tap [ALL] below to reset filter.</i>")
+    else:
+        for idx, b in enumerate(page_hits, start=start + 1):
+            meta_parts = []
+            if b.author:
+                meta_parts.append(escape(b.author))
+            if b.file_type:
+                meta_parts.append(escape(b.file_type.upper()))
+            if b.file_size:
+                meta_parts.append(format_file_size(b.file_size))
+            meta_info = " · ".join(meta_parts)
+            if meta_info:
+                lines.append(f"{idx}. <b>{escape(b.title)}</b>\n   {meta_info}\n")
+            else:
+                lines.append(f"{idx}. <b>{escape(b.title)}</b>\n")
 
     return "\n".join(lines).rstrip()
 
@@ -302,14 +372,16 @@ def _format_search_keyboard(
     qhash: str,
     page: int = 1,
     page_size: int = 8,
+    active_filter: str = "all",
 ) -> InlineKeyboardMarkup:
-    """Construct inline buttons for book results with Prev/Next pagination and refresh."""
-    total = len(hits)
+    """Construct inline buttons for book results with Prev/Next pagination, format filters, and refresh."""
+    filtered_hits = _filter_hits(hits, active_filter)
+    total = len(filtered_hits)
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
     start = (page - 1) * page_size
     end = min(start + page_size, total)
-    page_hits = hits[start:end]
+    page_hits = filtered_hits[start:end]
 
     buttons = []
     for idx, b in enumerate(page_hits, start=start + 1):
@@ -323,11 +395,23 @@ def _format_search_keyboard(
     if total_pages > 1:
         nav_row = []
         if page > 1:
-            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=encode_callback("page", qhash, page - 1)))
+            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=encode_callback("page", qhash, page - 1, active_filter)))
         nav_row.append(InlineKeyboardButton(f"Page {page}/{total_pages}", callback_data=encode_callback("noop", qhash)))
         if page < total_pages:
-            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=encode_callback("page", qhash, page + 1)))
+            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=encode_callback("page", qhash, page + 1, active_filter)))
         buttons.append(nav_row)
+
+    # Format Filter Buttons: [ALL], [EPUB], [PDF]
+    af = active_filter.lower()
+    btn_all = "• ALL •" if af == "all" else "ALL"
+    btn_epub = "• EPUB •" if af == "epub" else "EPUB"
+    btn_pdf = "• PDF •" if af == "pdf" else "PDF"
+    filter_row = [
+        InlineKeyboardButton(btn_all, callback_data=encode_callback("filter", qhash, "all")),
+        InlineKeyboardButton(btn_epub, callback_data=encode_callback("filter", qhash, "epub")),
+        InlineKeyboardButton(btn_pdf, callback_data=encode_callback("filter", qhash, "pdf")),
+    ]
+    buttons.append(filter_row)
 
     # Append refresh button
     buttons.append([InlineKeyboardButton("🔄 Refresh from sources", callback_data=encode_callback("refresh", qhash))])
@@ -424,17 +508,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.message.reply_text("⚠️ Book record not found.")
             return
 
-        # Format message template (HTML)
-        author_str = escape(book.author) if book.author else ""
-        format_str = escape(book.file_type.upper()) if book.file_type else ""
-        size_str = format_file_size(book.file_size)
-        title_str = escape(book.title)
-
-        if not book.md5:
-            download_block = "(no direct link)"
-        else:
+        direct_url: str | None = None
+        if book.md5:
             clean_md5 = book.md5.strip().lower()
-            direct_url: str | None = None
             mirror_mgr: MirrorManager | None = context.bot_data.get("mirror_manager")
             if mirror_mgr:
                 try:
@@ -447,40 +523,43 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 except Exception as exc:
                     logger.warning("[bot] Direct link resolution failed for %s: %s", clean_md5, exc)
 
-            if direct_url:
-                download_block = (
-                    "<b>Download:</b>\n"
-                    f'• <a href="{direct_url}"><b>⚡ Direct Download (One-Click)</b></a>\n'
-                    f'• <a href="https://libgen.la/ads.php?md5={clean_md5}">Libgen.la (Backup)</a>\n'
-                    f'• <a href="https://libgen.is/book/index.php?md5={clean_md5}">Libgen.is (Backup)</a>\n\n'
-                    "<i>Link is temporary. Tap the book again for a fresh one.</i>"
-                )
-            else:
-                links = build_links(book.md5)
-                links_formatted = "\n".join(f'• <a href="{url}"><b>{escape(label)}</b></a>' for label, url in links)
-                download_block = (
-                    "<i>⚠️ Direct download link unavailable; using landing page links:</i>\n\n"
-                    f"<b>Download links:</b>\n{links_formatted}\n\n"
-                    "<i>Tap a link to download in your browser.</i>"
-                )
-
-        spec_parts = []
-        if format_str:
-            spec_parts.append(format_str)
-        if size_str and size_str != "Unknown size":
-            spec_parts.append(size_str)
-        spec_line = f"\n{' · '.join(spec_parts)}" if spec_parts else ""
-        author_line = f"\n{author_str}" if author_str else ""
-
-        msg_html = (
-            f"<b>{title_str}</b>"
-            f"{author_line}"
-            f"{spec_line}\n\n"
-            f"{download_block}"
-        )
+        msg_html = _format_book_card(book, direct_url=direct_url)
 
         if query.message:
             await query.message.reply_text(msg_html, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+    elif action == "filter":
+        if len(args) < 2:
+            return
+        qh = args[0]
+        filt = args[1].lower()
+        reg_entry = _query_registry.get(qh)
+        if not reg_entry:
+            await query.answer("Search expired. Please search again.", show_alert=True)
+            return
+
+        raw_query, _ = reg_entry
+        qn = normalize_query(raw_query)
+        try:
+            cached = await db.get_search_cache(qn)
+            if not cached:
+                outcome = await search_service.search_books(raw_query, user_id=user_id)
+            else:
+                book_ids = cached[0]
+                books = await db.get_books_by_ids(book_ids)
+                outcome = SearchOutcome(
+                    hits=books,
+                    source="cache",
+                    total_count=len(books),
+                    query_normalized=qn,
+                )
+
+            text = _format_results_text(outcome, page=1, page_size=config.page_size, active_filter=filt)
+            reply_markup = _format_search_keyboard(outcome.hits, qh, page=1, page_size=config.page_size, active_filter=filt)
+            if query.message:
+                await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.debug("Failed editing message for filter change: %s", e)
 
     elif action == "refresh":
         if not args:
@@ -534,6 +613,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             page_num = int(args[1])
         except (ValueError, TypeError):
             return
+        filt = args[2].lower() if len(args) > 2 else "all"
 
         reg_entry = _query_registry.get(qh)
         if not reg_entry:
@@ -556,8 +636,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     query_normalized=qn,
                 )
 
-            text = _format_results_text(outcome, page=page_num, page_size=config.page_size)
-            reply_markup = _format_search_keyboard(outcome.hits, qh, page=page_num, page_size=config.page_size)
+            text = _format_results_text(outcome, page=page_num, page_size=config.page_size, active_filter=filt)
+            reply_markup = _format_search_keyboard(outcome.hits, qh, page=page_num, page_size=config.page_size, active_filter=filt)
             if query.message:
                 await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
         except RateLimitedError:
@@ -570,6 +650,58 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     elif action == "noop":
         await query.answer()
+
+
+async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline queries (@bot <query>) for fast, seamless search sharing."""
+    inline_query = update.inline_query
+    if not inline_query:
+        return
+
+    config: Config = context.bot_data["config"]
+    search_service: SearchService = context.bot_data["search_service"]
+    user_id = inline_query.from_user.id if inline_query.from_user else None
+
+    if not is_authorized(user_id, config):
+        await inline_query.answer([], is_personal=True, cache_time=5)
+        return
+
+    query_text = inline_query.query.strip()
+    if not query_text:
+        await inline_query.answer([], is_personal=True, cache_time=5)
+        return
+
+    try:
+        outcome = await search_service.search_books(query_text, user_id=user_id)
+        results: list[InlineQueryResultArticle] = []
+        for i, book in enumerate(outcome.hits[:20]):
+            card_text = _format_book_card(book)
+            desc_parts = []
+            if book.author:
+                desc_parts.append(book.author)
+            if book.file_type:
+                desc_parts.append(f"[{book.file_type.upper()}]")
+            if book.file_size:
+                desc_parts.append(format_file_size(book.file_size))
+            desc = " · ".join(desc_parts)
+
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"{book.id or i}_{i}",
+                    title=book.title,
+                    description=desc if desc else None,
+                    input_message_content=InputTextMessageContent(
+                        message_text=card_text,
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=True,
+                    ),
+                )
+            )
+
+        await inline_query.answer(results, cache_time=30, is_personal=True)
+    except Exception as exc:
+        logger.warning("Inline query failed for %r: %s", query_text, exc)
+        await inline_query.answer([], is_personal=True, cache_time=5)
 
 
 # -----------------------------------------------------------------------------
@@ -590,11 +722,39 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.debug("Failed sending error notification to user: %r", notify_err)
 
 
+async def _maintenance_loop(db: Database, interval_sec: float) -> None:
+    """Periodically prune expired search cache entries and checkpoint WAL."""
+    logger.info("Starting background maintenance loop (interval: %ss)", interval_sec)
+    try:
+        while True:
+            await asyncio.sleep(interval_sec)
+            try:
+                pruned = await db.prune_expired_cache()
+                cp = await db.wal_checkpoint("PASSIVE")
+                logger.info(
+                    "[maintenance] Pruned %d expired cache entries; WAL checkpoint: %s",
+                    pruned,
+                    cp,
+                )
+            except Exception as exc:
+                logger.warning("[maintenance] Error during periodic maintenance: %r", exc)
+    except asyncio.CancelledError:
+        logger.info("Background maintenance loop cancelled.")
+
+
 async def post_init(application: Application) -> None:
-    """Launch background mirror probe once the event loop is active."""
+    """Launch background mirror probe and maintenance tasks once event loop is active."""
     mirror_manager: MirrorManager | None = application.bot_data.get("mirror_manager")
     if mirror_manager:
         application.bot_data["startup_probe_task"] = mirror_manager.startup_probe()
+
+    db: Database | None = application.bot_data.get("db")
+    config: Config | None = application.bot_data.get("config")
+    if db:
+        interval = getattr(config, "maintenance_interval_sec", 21600.0) if config else 21600.0
+        application.bot_data["maintenance_task"] = asyncio.create_task(
+            _maintenance_loop(db, interval)
+        )
 
 
 async def post_shutdown(application: Application) -> None:
@@ -605,6 +765,15 @@ async def post_shutdown(application: Application) -> None:
         task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+
+    m_task: asyncio.Task | None = application.bot_data.get("maintenance_task")
+    if m_task and not m_task.done():
+        logger.info("Cancelling background maintenance task...")
+        m_task.cancel()
+        try:
+            await m_task
         except asyncio.CancelledError:
             pass
 
@@ -674,6 +843,7 @@ def build_application(config: Config) -> Application:
     app.add_handler(CommandHandler("rebuild", handle_rebuild))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(InlineQueryHandler(handle_inline_query))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_search))
 
     return app

@@ -201,6 +201,14 @@ def _escape_like(raw: str) -> str:
     return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+@dataclass(frozen=True)
+class DatabaseStats:
+    books_count: int
+    search_cache_count: int
+    db_size_bytes: int
+    wal_size_bytes: int
+
+
 class Database:
     """Async-safe SQLite database manager for Nabu-V1."""
 
@@ -270,6 +278,8 @@ class Database:
                 ("libgen", "https://libgen.bz", "li"),
                 ("libgen", "https://libgen.is", "is"),
                 ("libgen", "https://libgen.rs", "is"),
+                ("annas", "https://annas-archive.org", "annas"),
+                ("annas", "https://annas-archive.se", "annas"),
             ]
             for src, url, fork in mirrors_seed:
                 conn.execute(
@@ -1219,4 +1229,26 @@ class Database:
     async def prune_expired_cache(self, now: float | None = None) -> int:
         """Asynchronously delete expired search cache entries."""
         return await asyncio.to_thread(self.prune_expired_cache_sync, now)
+
+    def _get_stats_sync(self) -> DatabaseStats:
+        with self._get_connection() as conn:
+            row_b = conn.execute("SELECT count(*) as cnt FROM books").fetchone()
+            books_cnt = row_b["cnt"] if row_b else 0
+            row_c = conn.execute("SELECT count(*) as cnt FROM search_cache").fetchone()
+            cache_cnt = row_c["cnt"] if row_c else 0
+
+        wal_path = Path(str(self.db_path) + "-wal")
+        db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
+        wal_size = wal_path.stat().st_size if wal_path.exists() else 0
+        return DatabaseStats(
+            books_count=books_cnt,
+            search_cache_count=cache_cnt,
+            db_size_bytes=db_size,
+            wal_size_bytes=wal_size,
+        )
+
+    async def get_stats(self) -> DatabaseStats:
+        """Asynchronously retrieve database counts and file size telemetry."""
+        return await asyncio.to_thread(self._get_stats_sync)
+
 
